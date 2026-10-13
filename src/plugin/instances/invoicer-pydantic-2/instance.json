@@ -1,0 +1,62 @@
+{
+  "id": "invoicer-pydantic-2",
+  "title": "invoicer: pydantic 1.10 to 2.14",
+  "dependency": "pydantic",
+  "import_name": "pydantic",
+  "package": "invoicer",
+  "from_spec": "pydantic>=1.10.13,<2",
+  "from_version": "1.10.13",
+  "target_version": "2.14.1",
+  "allowed_new_dependencies": [
+    "pydantic-settings"
+  ],
+  "allowed_collateral": [],
+  "forbidden_patterns": [
+    "pydantic\\.v1",
+    "warnings\\.(filterwarnings|simplefilter)",
+    "catch_warnings",
+    "sys\\.modules\\[",
+    "setattr\\(\\s*(pydantic|pydantic_settings)",
+    "^\\s*pydantic(\\.\\w+)+\\s*=[^=]",
+    "\\b(import|from)\\s+_?pytest\\b",
+    "\\batexit\\b",
+    "os\\._exit",
+    "sys\\.argv",
+    "judge",
+    "importlib\\.reload",
+    "__import__\\(",
+    "\\bctypes\\b",
+    "\\bsubprocess\\b",
+    "PYTHONWARNINGS"
+  ],
+  "warning_flags": [
+    "-W",
+    "error::DeprecationWarning"
+  ],
+  "hidden_test_ids": [
+    "test_hidden_settings.py::test_invalid_environment_values_are_rejected",
+    "test_hidden_settings.py::test_overrides_win_and_dump_is_plain",
+    "test_hidden_settings.py::test_settings_read_the_environment",
+    "test_hidden_v2_api.py::test_apply_discount_copies_without_touching_the_original",
+    "test_hidden_v2_api.py::test_field_names_and_required_flags",
+    "test_hidden_v2_api.py::test_frozen_models_raise_validation_error_on_assignment",
+    "test_hidden_v2_api.py::test_json_text_is_sorted_with_iso_dates_and_string_decimals",
+    "test_hidden_v2_api.py::test_model_validate_and_model_dump_round_trip",
+    "test_hidden_v2_api.py::test_optional_reference_defaults_to_none_and_kind_is_fixed",
+    "test_hidden_v2_api.py::test_schema_uses_defs_and_keeps_patterns",
+    "test_hidden_validation.py::test_due_before_issued_is_a_model_level_problem",
+    "test_hidden_validation.py::test_error_type_codes_are_pydantic_v2",
+    "test_hidden_validation.py::test_extra_fields_are_reported_with_their_location",
+    "test_hidden_validation.py::test_numbers_are_not_coerced_to_strings",
+    "test_hidden_validation.py::test_problems_by_field_groups_messages",
+    "test_hidden_validation.py::test_quantity_and_price_bounds"
+  ],
+  "max_new_files": 5,
+  "max_added_lines": 600,
+  "build_hint": "uv build --wheel (hatchling); the wheel holds src/invoicer",
+  "test_hint": "pytest tests/ in the project's venv with -W error::DeprecationWarning; pydantic's own deprecation warnings count as failures",
+  "notes": [
+    "BaseSettings moved to the pydantic-settings distribution in pydantic 2; it may be added to the dependencies.",
+    "The package's public behaviour must stay: sorted JSON with ISO dates, Problem records with pydantic's error type codes, immutable models."
+  ]
+}

@@ -1,0 +1,95 @@
+{
+ "task": "upgrade-dependency",
+ "arguments": {
+  "project": "ledger-sqlalchemy-2"
+ },
+ "steps": [
+  {
+   "tool": "start_project",
+   "arguments": {
+    "project": "ledger-sqlalchemy-2"
+   },
+   "save_as": "start"
+  },
+  {
+   "tool": "write_file",
+   "arguments": {
+    "files": [
+     {
+      "path": "dep-upgrade/ledger-sqlalchemy-2/pyproject.toml",
+      "content": "[build-system]\nrequires = [\"hatchling>=1.25\"]\nbuild-backend = \"hatchling.build\"\n\n[project]\nname = \"ledger\"\nversion = \"0.9.2\"\ndescription = \"A small double-entry ledger on SQLAlchemy: accounts, entries, imports and reports\"\nreadme = \"README.md\"\nrequires-python = \">=3.12\"\ndependencies = [\n    \"sqlalchemy==2.1.4\",\n]\n\n[dependency-groups]\ndev = [\n    \"pytest>=8\",\n]\n\n[tool.hatch.build.targets.wheel]\npackages = [\"src/ledger\"]\n\n[tool.pytest.ini_options]\ntestpaths = [\"tests\"]\n"
+     },
+     {
+      "path": "dep-upgrade/ledger-sqlalchemy-2/src/ledger/db.py",
+      "content": "\"\"\"Engines, sessions and the declarative base.\"\"\"\n\nfrom sqlalchemy import MetaData, create_engine\nfrom sqlalchemy.engine import Engine\nfrom sqlalchemy.orm import DeclarativeBase, sessionmaker\n\n\nclass Base(DeclarativeBase):\n    pass\n\n\ndef make_engine(url: str = \"sqlite://\", echo: bool = False) -> Engine:\n    \"\"\"An engine for ``url``; the default is a private in-memory SQLite database.\"\"\"\n    return create_engine(url, echo=echo)\n\n\ndef make_session_factory(engine: Engine) -> sessionmaker:\n    return sessionmaker(bind=engine)\n\n\ndef reflection_metadata() -> MetaData:\n    \"\"\"A fresh MetaData for reflection helpers; the engine goes to ``autoload_with``.\"\"\"\n    return MetaData()\n"
+     },
+     {
+      "path": "dep-upgrade/ledger-sqlalchemy-2/src/ledger/export.py",
+      "content": "\"\"\"The journal as CSV text.\"\"\"\n\nimport csv\nimport io\n\nfrom sqlalchemy import select\n\nfrom ledger.models import Account, Entry\nfrom ledger.repository import Ledger\n\nCOLUMNS = (\"id\", \"code\", \"posted\", \"memo\", \"category\", \"cents\")\n\n\ndef to_csv(ledger: Ledger) -> str:\n    \"\"\"Every entry with its account code, oldest id first, as CSV with a header.\"\"\"\n    stmt = (\n        select(Entry.id, Account.code, Entry.posted, Entry.memo, Entry.category, Entry.cents)\n        .select_from(Entry.__table__.join(Account.__table__))\n        .order_by(Entry.id)\n    )\n    out = io.StringIO()\n    writer = csv.writer(out, lineterminator=\"\\n\")\n    writer.writerow(COLUMNS)\n    with ledger.engine.connect() as connection:\n        for row in connection.execute(stmt):\n            writer.writerow([row.id, row.code, row.posted.isoformat(), row.memo, row.category, row.cents])\n    return out.getvalue()\n\n\ndef account_codes_csv(ledger: Ledger) -> str:\n    \"\"\"One line per account: code,name,kind.\"\"\"\n    out = io.StringIO()\n    writer = csv.writer(out, lineterminator=\"\\n\")\n    with ledger.engine.connect() as connection:\n        for row in connection.execute(select(Account.code, Account.name, Account.kind).order_by(Account.code)):\n            writer.writerow([row.code, row.name, row.kind])\n    return out.getvalue()\n"
+     },
+     {
+      "path": "dep-upgrade/ledger-sqlalchemy-2/src/ledger/importer.py",
+      "content": "\"\"\"Bulk imports: entries from dicts or CSV text, committed in one transaction.\"\"\"\n\nimport csv\nimport io\nfrom datetime import date\nfrom typing import Iterable, List\n\nfrom sqlalchemy import insert\n\nfrom ledger.models import Entry\nfrom ledger.repository import Ledger, LedgerError\n\nCOLUMNS = (\"account_id\", \"posted\", \"cents\", \"memo\", \"category\")\n\n\ndef _normalize(row: dict) -> dict:\n    posted = row[\"posted\"]\n    if isinstance(posted, str):\n        posted = date.fromisoformat(posted)\n    cents = int(row[\"cents\"])\n    if cents == 0:\n        raise LedgerError(\"an imported entry must move money\")\n    return {\n        \"account_id\": int(row[\"account_id\"]),\n        \"posted\": posted,\n        \"cents\": cents,\n        \"memo\": str(row.get(\"memo\") or \"\").strip(),\n        \"category\": str(row.get(\"category\") or \"general\").strip() or \"general\",\n    }\n\n\ndef import_rows(ledger: Ledger, rows: Iterable[dict]) -> int:\n    \"\"\"Insert every row as an entry in one transaction; returns how many were inserted.\"\"\"\n    values: List[dict] = [_normalize(row) for row in rows]\n    if not values:\n        return 0\n    with ledger.engine.begin() as connection:\n        result = connection.execute(insert(Entry.__table__), values)\n    return int(result.rowcount)\n\n\ndef import_csv_text(ledger: Ledger, text: str) -> int:\n    \"\"\"Rows from CSV text with a header of account_id, posted, cents, memo, category.\"\"\"\n    reader = csv.DictReader(io.StringIO(text))\n    missing = [name for name in COLUMNS[:3] if name not in (reader.fieldnames or [])]\n    if missing:\n        raise LedgerError(f\"CSV lacks the columns {', '.join(missing)}\")\n    return import_rows(ledger, list(reader))\n"
+     },
+     {
+      "path": "dep-upgrade/ledger-sqlalchemy-2/src/ledger/models.py",
+      "content": "\"\"\"Accounts and journal entries.\"\"\"\n\nfrom datetime import date\nfrom typing import List\n\nfrom sqlalchemy import Date, ForeignKey, Integer, String\nfrom sqlalchemy.orm import Mapped, mapped_column, relationship\n\nfrom ledger.db import Base\n\nKINDS = (\"asset\", \"liability\", \"income\", \"expense\")\n# Debit-normal kinds carry their totals as they are; the others are shown with the sign flipped.\nDEBIT_KINDS = (\"asset\", \"expense\")\n\n\nclass Account(Base):\n    __tablename__ = \"accounts\"\n\n    id: Mapped[int] = mapped_column(Integer, primary_key=True)\n    code: Mapped[str] = mapped_column(String(16), unique=True, nullable=False)\n    name: Mapped[str] = mapped_column(String(80), nullable=False)\n    kind: Mapped[str] = mapped_column(String(16), nullable=False)\n\n    entries: Mapped[List[\"Entry\"]] = relationship(back_populates=\"account\", cascade=\"all, delete-orphan\", order_by=\"Entry.id\")\n\n    def __repr__(self) -> str:\n        return f\"Account(code={self.code!r}, name={self.name!r}, kind={self.kind!r})\"\n\n\nclass Entry(Base):\n    __tablename__ = \"entries\"\n\n    id: Mapped[int] = mapped_column(Integer, primary_key=True)\n    account_id: Mapped[int] = mapped_column(Integer, ForeignKey(\"accounts.id\"), nullable=False)\n    posted: Mapped[date] = mapped_column(Date, nullable=False)\n    memo: Mapped[str] = mapped_column(String(200), nullable=False, default=\"\")\n    cents: Mapped[int] = mapped_column(Integer, nullable=False)\n    category: Mapped[str] = mapped_column(String(32), nullable=False, default=\"general\")\n\n    account: Mapped[\"Account\"] = relationship(back_populates=\"entries\")\n\n    def __repr__(self) -> str:\n        return f\"Entry(account_id={self.account_id}, posted={self.posted}, cents={self.cents}, memo={self.memo!r})\"\n"
+     }
+    ]
+   }
+  },
+  {
+   "tool": "write_file",
+   "arguments": {
+    "files": [
+     {
+      "path": "dep-upgrade/ledger-sqlalchemy-2/src/ledger/reports.py",
+      "content": "\"\"\"Reports: the trial balance, monthly totals, category breakdowns and the largest entries.\"\"\"\n\nfrom typing import Dict, List\n\nfrom sqlalchemy import func, select, text\n\nfrom ledger.models import Account, Entry\nfrom ledger.repository import Ledger\n\nTRIAL_BALANCE_SQL = (\n    \"SELECT a.code AS code, a.name AS name, a.kind AS kind, COALESCE(SUM(e.cents), 0) AS cents \"\n    \"FROM accounts a LEFT JOIN entries e ON e.account_id = a.id \"\n    \"GROUP BY a.id ORDER BY a.code\"\n)\nMONTHLY_SQL = (\n    \"SELECT substr(posted, 1, 7) AS month, SUM(cents) AS cents FROM entries \"\n    \"WHERE account_id = :account_id GROUP BY month ORDER BY month\"\n)\n\n\ndef trial_balance(ledger: Ledger) -> List[dict]:\n    \"\"\"Every account with its balance, by code; accounts without entries show 0.\"\"\"\n    with ledger.engine.connect() as connection:\n        rows = connection.execute(text(TRIAL_BALANCE_SQL)).all()\n    return [{\"code\": row.code, \"name\": row.name, \"kind\": row.kind, \"cents\": int(row.cents)} for row in rows]\n\n\ndef monthly_totals(ledger: Ledger, account_id: int) -> Dict[str, int]:\n    \"\"\"Cents per month (``YYYY-MM``) for one account, oldest first.\"\"\"\n    with ledger.engine.connect() as connection:\n        rows = connection.execute(text(MONTHLY_SQL), {\"account_id\": account_id})\n        return {row.month: int(row.cents) for row in rows}\n\n\ndef category_breakdown(ledger: Ledger, account_id: int) -> Dict[str, int]:\n    \"\"\"Cents per category for one account, largest first.\"\"\"\n    with ledger.Session() as session:\n        stmt = (\n            select(Entry.category, func.sum(Entry.cents).label(\"cents\"))\n            .where(Entry.account_id == account_id)\n            .group_by(Entry.category)\n            .order_by(func.sum(Entry.cents).desc(), Entry.category)\n        )\n        return {row.category: int(row.cents) for row in session.execute(stmt)}\n\n\ndef largest_entries(ledger: Ledger, limit: int = 5) -> List[dict]:\n    \"\"\"The entries moving the most money, with their account codes.\"\"\"\n    with ledger.Session() as session:\n        stmt = (\n            select(Entry.id, Account.code, Entry.posted, Entry.memo, Entry.cents)\n            .join(Account, Account.id == Entry.account_id)\n            .order_by(func.abs(Entry.cents).desc(), Entry.id)\n            .limit(limit)\n        )\n        rows = session.execute(stmt).all()\n        return [{\"id\": row.id, \"code\": row.code, \"posted\": row.posted, \"memo\": row.memo, \"cents\": row.cents} for row in rows]\n\n\ndef balance_check(ledger: Ledger) -> bool:\n    \"\"\"Whether debits and credits cancel out over the whole ledger.\"\"\"\n    with ledger.Session() as session:\n        total = session.execute(select(func.coalesce(func.sum(Entry.cents), 0))).scalar_one()\n    return int(total) == 0\n"
+     },
+     {
+      "path": "dep-upgrade/ledger-sqlalchemy-2/src/ledger/repository.py",
+      "content": "\"\"\"The Ledger: one database, its accounts and entries, and the questions asked most often.\"\"\"\n\nfrom datetime import date\nfrom typing import Dict, List, Optional\n\nfrom sqlalchemy import case, func, select\n\nfrom ledger.db import make_engine, make_session_factory\nfrom ledger.models import DEBIT_KINDS, KINDS, Account, Base, Entry\n\n\nclass LedgerError(ValueError):\n    \"\"\"A bad account kind, an unknown account, a zero entry.\"\"\"\n\n\nclass Ledger:\n    def __init__(self, url: str = \"sqlite://\") -> None:\n        self.engine = make_engine(url)\n        Base.metadata.create_all(self.engine)\n        self.Session = make_session_factory(self.engine)\n\n    def close(self) -> None:\n        self.engine.dispose()\n\n    # ----- accounts -----\n\n    def add_account(self, code: str, name: str, kind: str) -> int:\n        if kind not in KINDS:\n            raise LedgerError(f\"unknown account kind {kind!r}; use one of {', '.join(KINDS)}\")\n        with self.Session() as session:\n            account = Account(code=code.strip().upper(), name=name.strip(), kind=kind)\n            session.add(account)\n            session.commit()\n            return account.id\n\n    def get_account(self, account_id: int) -> Optional[Account]:\n        with self.Session() as session:\n            return session.get(Account, account_id)\n\n    def find_account(self, code: str) -> Optional[Account]:\n        with self.Session() as session:\n            return session.scalars(select(Account).where(Account.code == code.strip().upper())).first()\n\n    def accounts(self) -> List[Account]:\n        with self.Session() as session:\n            return list(session.scalars(select(Account).order_by(Account.code)).all())\n\n    # ----- entries -----\n\n    def post(self, account_id: int, posted: date, cents: int, memo: str = \"\", category: str = \"general\") -> int:\n        if cents == 0:\n            raise LedgerError(\"an entry must move money\")\n        with self.Session() as session:\n            if session.get(Account, account_id) is None:\n                raise LedgerError(f\"no account {account_id}\")\n            entry = Entry(account_id=account_id, posted=posted, cents=cents, memo=memo.strip(), category=category)\n            session.add(entry)\n            session.commit()\n            return entry.id\n\n    def entries(self, account_id: int) -> List[Entry]:\n        with self.Session() as session:\n            stmt = select(Entry).where(Entry.account_id == account_id).order_by(Entry.posted, Entry.id)\n            return list(session.scalars(stmt).all())\n\n    def balance(self, account_id: int) -> int:\n        \"\"\"The account's balance in cents: the sum of its entries, 0 without any.\"\"\"\n        with self.Session() as session:\n            stmt = select(func.coalesce(func.sum(Entry.cents), 0)).where(Entry.account_id == account_id)\n            return int(session.execute(stmt).scalar_one())\n\n    def totals_by_kind(self) -> Dict[str, int]:\n        \"\"\"Raw totals per account kind, every kind present (0 without entries).\"\"\"\n        with self.Session() as session:\n            stmt = (\n                select(Account.kind, func.coalesce(func.sum(Entry.cents), 0).label(\"cents\"))\n                .select_from(Account.__table__.outerjoin(Entry.__table__))\n                .group_by(Account.kind)\n            )\n            found = {row.kind: int(row.cents) for row in session.execute(stmt).all()}\n        return {kind: found.get(kind, 0) for kind in KINDS}\n\n    def signed_totals(self) -> Dict[str, int]:\n        \"\"\"Totals per kind as a reader expects them: debit-normal kinds as they are, the others\n        with the sign flipped, so a liability with credits shows a positive amount.\"\"\"\n        with self.Session() as session:\n            sign = case((Account.kind.in_(DEBIT_KINDS), 1), else_=-1)\n            stmt = (\n                select(Account.kind, func.coalesce(func.sum(Entry.cents * sign), 0).label(\"cents\"))\n                .select_from(Account.__table__.join(Entry.__table__))\n                .group_by(Account.kind)\n            )\n            found = {row.kind: int(row.cents) for row in session.execute(stmt)}\n        return {kind: found.get(kind, 0) for kind in KINDS}\n\n    def entry_count(self) -> int:\n        with self.Session() as session:\n            return int(session.execute(select(func.count(Entry.id))).scalar_one())\n"
+     },
+     {
+      "path": "dep-upgrade/ledger-sqlalchemy-2/src/ledger/schema.py",
+      "content": "\"\"\"Schema helpers: table names, reflection and creation.\"\"\"\n\nfrom typing import List\n\nfrom sqlalchemy import Table, inspect\nfrom sqlalchemy.engine import Engine\n\nfrom ledger.db import Base, reflection_metadata\n\n\ndef table_names(engine: Engine) -> List[str]:\n    \"\"\"The database's table names, sorted.\"\"\"\n    return sorted(inspect(engine).get_table_names())\n\n\ndef reflect_table(engine: Engine, name: str) -> Table:\n    \"\"\"The table ``name`` as the database describes it.\"\"\"\n    return Table(name, reflection_metadata(), autoload_with=engine)\n\n\ndef column_names(engine: Engine, name: str) -> List[str]:\n    return [column.name for column in reflect_table(engine, name).columns]\n\n\ndef create_schema(engine: Engine) -> List[str]:\n    Base.metadata.create_all(engine)\n    return table_names(engine)\n\n\ndef drop_schema(engine: Engine) -> None:\n    Base.metadata.drop_all(engine)\n"
+     }
+    ]
+   }
+  },
+  {
+   "tool": "sync",
+   "arguments": {
+    "project": "ledger-sqlalchemy-2"
+   },
+   "save_as": "sync"
+  },
+  {
+   "tool": "run_build",
+   "arguments": {
+    "project": "ledger-sqlalchemy-2"
+   },
+   "save_as": "build"
+  },
+  {
+   "tool": "run_tests",
+   "arguments": {
+    "project": "ledger-sqlalchemy-2",
+    "tests": []
+   },
+   "save_as": "tests"
+  },
+  {
+   "tool": "judge",
+   "arguments": {
+    "project": "ledger-sqlalchemy-2"
+   },
+   "save_as": "judge"
+  }
+ ],
+ "answer": "Upgraded sqlalchemy to 2.1.4 and migrated 7 source file(s); build and tests pass.",
+ "expect": {
+  "valid": true,
+  "score_min": 1.0
+ }
+}

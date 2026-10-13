@@ -1,0 +1,153 @@
+diff --git a/pyproject.toml b/pyproject.toml
+index 810a21f..19b77e1 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -9,7 +9,7 @@ description = "Sales reports from whitespace-separated exports, on pandas"
+ readme = "README.md"
+ requires-python = ">=3.12"
+ dependencies = [
+-    "pandas>=2.1,<2.2",
++    "pandas==3.0.6",
+ ]
+ 
+ [dependency-groups]
+diff --git a/src/salesreport/cleaning.py b/src/salesreport/cleaning.py
+index 04ab7d7..95e4b10 100644
+--- a/src/salesreport/cleaning.py
++++ b/src/salesreport/cleaning.py
+@@ -1,12 +1,13 @@
+ """Cleaning an export: prices carried forward, notes filled, text normalized."""
+ 
+ import pandas as pd
++from pandas.api.types import is_string_dtype
+ 
+ 
+ def fill_prices(frame: pd.DataFrame) -> pd.DataFrame:
+     """Carry the last known unit price forward into missing ones and recompute revenue."""
+     frame = frame.copy()
+-    frame["unit_price"] = frame["unit_price"].fillna(method="ffill")
++    frame["unit_price"] = frame["unit_price"].ffill()
+     frame["revenue"] = frame["units"] * frame["unit_price"]
+     return frame
+ 
+@@ -14,7 +15,7 @@ def fill_prices(frame: pd.DataFrame) -> pd.DataFrame:
+ def fill_notes(frame: pd.DataFrame) -> pd.DataFrame:
+     """Missing notes become empty strings."""
+     frame = frame.copy()
+-    frame["notes"].fillna("", inplace=True)
++    frame["notes"] = frame["notes"].fillna("")
+     return frame
+ 
+ 
+@@ -22,14 +23,14 @@ def normalize_text(frame: pd.DataFrame) -> pd.DataFrame:
+     """Strip and title-case every text column."""
+     frame = frame.copy()
+     for column in frame.columns:
+-        if frame[column].dtype == object:
++        if is_string_dtype(frame[column]):
+             frame[column] = frame[column].str.strip().str.title()
+     return frame
+ 
+ 
+ def round_prices(frame: pd.DataFrame, places: int = 2) -> pd.DataFrame:
+     """Every float in the frame rounded to ``places``."""
+-    return frame.applymap(lambda value: round(value, places) if isinstance(value, float) else value)
++    return frame.map(lambda value: round(value, places) if isinstance(value, float) else value)
+ 
+ 
+ def clean(frame: pd.DataFrame) -> pd.DataFrame:
+diff --git a/src/salesreport/formatting.py b/src/salesreport/formatting.py
+index 214e5c8..869770a 100644
+--- a/src/salesreport/formatting.py
++++ b/src/salesreport/formatting.py
+@@ -11,7 +11,7 @@ def format_money(value: float) -> str:
+ 
+ def format_table(frame: pd.DataFrame) -> str:
+     """The frame as text, every float as money, without the index."""
+-    shown = frame.applymap(lambda value: format_money(value) if isinstance(value, float) else value)
++    shown = frame.map(lambda value: format_money(value) if isinstance(value, float) else value)
+     return shown.to_string(index=False)
+ 
+ 
+diff --git a/src/salesreport/loading.py b/src/salesreport/loading.py
+index 4d2d9f6..0248a6f 100644
+--- a/src/salesreport/loading.py
++++ b/src/salesreport/loading.py
+@@ -11,13 +11,7 @@ COLUMNS: List[str] = ["date", "region", "product", "units", "unit_price", "notes
+ def load_sales(text: str) -> pd.DataFrame:
+     """Rows of ``date region product units unit_price notes`` separated by whitespace, with a
+     header; ``-`` marks a missing value. Adds ``revenue`` (units times unit price)."""
+-    frame = pd.read_csv(
+-        io.StringIO(text),
+-        delim_whitespace=True,
+-        parse_dates=["date"],
+-        infer_datetime_format=True,
+-        na_values=["-"],
+-    )
++    frame = pd.read_csv(io.StringIO(text), sep=r"\s+", parse_dates=["date"], na_values=["-"])
+     missing = [column for column in COLUMNS if column not in frame.columns]
+     if missing:
+         raise ValueError(f"the export lacks the columns {', '.join(missing)}")
+@@ -27,5 +21,5 @@ def load_sales(text: str) -> pd.DataFrame:
+ 
+ def load_prices(text: str) -> pd.Series:
+     """A ``date,price`` CSV as a Series of prices indexed by date, oldest first."""
+-    frame = pd.read_csv(io.StringIO(text), parse_dates=["date"], index_col="date", infer_datetime_format=True)
++    frame = pd.read_csv(io.StringIO(text), parse_dates=["date"], index_col="date")
+     return frame["price"].sort_index()
+diff --git a/src/salesreport/metrics.py b/src/salesreport/metrics.py
+index d4a4fbb..77c4483 100644
+--- a/src/salesreport/metrics.py
++++ b/src/salesreport/metrics.py
+@@ -5,29 +5,27 @@ import pandas as pd
+ 
+ def monthly_revenue(frame: pd.DataFrame) -> pd.Series:
+     """Revenue per calendar month, indexed by month end."""
+-    return frame.set_index("date")["revenue"].resample("M").sum()
++    return frame.set_index("date")["revenue"].resample("ME").sum()
+ 
+ 
+ def top_products(frame: pd.DataFrame, n: int = 3) -> pd.Series:
+     """The ``n`` products with the most orders, most first."""
+-    return pd.value_counts(frame["product"]).head(n)
++    return frame["product"].value_counts().head(n)
+ 
+ 
+ def first_week(frame: pd.DataFrame) -> pd.DataFrame:
+     """The orders of the first seven days, indexed by date."""
+-    return frame.set_index("date").sort_index().first("7D")
++    indexed = frame.set_index("date").sort_index()
++    if indexed.empty:
++        return indexed
++    return indexed.loc[indexed.index < indexed.index[0] + pd.Timedelta(days=7)]
+ 
+ 
+ def regional_share(frame: pd.DataFrame) -> pd.Series:
+     """Each region's share of total revenue, indexed by region."""
+-
+-    def summarize(group: pd.DataFrame) -> pd.Series:
+-        label = group["region"].iloc[0]
+-        return pd.Series({"label": label, "revenue": float(group["revenue"].sum())})
+-
+-    totals = frame.groupby("region").apply(summarize)
+-    shares = totals["revenue"] / totals["revenue"].sum()
+-    shares.index = totals["label"].tolist()
++    totals = frame.groupby("region")["revenue"].sum().astype(float)
++    shares = totals / totals.sum()
++    shares.index = totals.index.tolist()
+     return shares.astype(float)
+ 
+ 
+diff --git a/src/salesreport/segments.py b/src/salesreport/segments.py
+index 962927d..f5d5be5 100644
+--- a/src/salesreport/segments.py
++++ b/src/salesreport/segments.py
+@@ -7,7 +7,7 @@ def flag_large_orders(frame: pd.DataFrame, threshold: float = 1000.0) -> pd.Data
+     """A copy with a boolean ``large`` column: revenue above ``threshold``."""
+     frame = frame.copy()
+     frame["large"] = False
+-    frame["large"][frame["revenue"] > threshold] = True
++    frame.loc[frame["revenue"] > threshold, "large"] = True
+     return frame
+ 
+ 

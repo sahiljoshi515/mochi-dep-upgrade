@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "invoicer"
+version = "1.4.0"
+description = "Invoice models, pricing, validation and reports for a small billing service"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=1.10.13,<2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/invoicer"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

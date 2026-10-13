@@ -1,0 +1,13 @@
+_ > nanoagent.plugin.manifest.ProductConfig:
+tagline: "Upgrade one library to its target version and keep the project building and passing"
+summary: "Pick a small Python project pinned to an old major of a real library (pydantic, SQLAlchemy, Flask, pandas or NumPy). The agent raises that one dependency to the target version and migrates the code; a judge rebuilds the wheel and runs the public and hidden tests, and a verifier checks the lock, the diff and every result. A full upgrade takes more than the 6 steps Mochi's hosted runner allows, so run it on your own computer with Mochi Lab or a local NanoAgent."
+highlights:
+  - "Real breaking changes: the old code fails on the new version until the API is migrated"
+  - "Hidden tests catch shims, warning filters and partial migrations"
+  - "Only the dependency and the package's own code may change; tests and the lock are protected"
+  - "Every verdict is recomputed from file hashes, the lock and the judge's record"
+steps:
+  - "Pick a project (on a runner with more than 6 steps: your own computer running Mochi Lab, or NanoAgent locally)"
+  - "It installs the project as it is, then the agent re-locks and migrates the code"
+  - "The judge rebuilds and runs the public and hidden tests"
+  - "See the four checks, the changed files and the verdict"

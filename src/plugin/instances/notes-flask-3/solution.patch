@@ -1,0 +1,157 @@
+diff --git a/pyproject.toml b/pyproject.toml
+index fb37bd5..289eade 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -9,8 +9,9 @@ description = "A small Flask API and site for personal notes"
+ readme = "README.md"
+ requires-python = ">=3.12"
+ dependencies = [
+-    "flask>=2.2,<2.3",
+-    "werkzeug>=2.2,<2.3",
++    "flask==3.1.3",
++    "werkzeug>=3.1,<4",
++    "markupsafe>=2.1.1",
+ ]
+ 
+ [dependency-groups]
+diff --git a/src/notes/app.py b/src/notes/app.py
+index c5b8456..d02833d 100644
+--- a/src/notes/app.py
++++ b/src/notes/app.py
+@@ -4,23 +4,17 @@ from flask import Flask
+ 
+ from notes.api import api
+ from notes.filters import register_filters
+-from notes.json_support import NotesJSONEncoder
++from notes.json_support import NotesJSONProvider
+ from notes.pages import pages
+ from notes.store import NoteStore, seed_notes
+ 
+ 
+ def create_app(config: dict | None = None) -> Flask:
+     app = Flask(__name__)
+-    app.config.update(
+-        SECRET_KEY="notes-dev",
+-        SEED=True,
+-        JSON_SORT_KEYS=False,
+-        JSON_AS_ASCII=False,
+-        JSONIFY_PRETTYPRINT_REGULAR=False,
+-    )
++    app.config.update(SECRET_KEY="notes-dev", SEED=True)
+     if config:
+         app.config.update(config)
+-    app.json_encoder = NotesJSONEncoder
++    app.json = NotesJSONProvider(app)
+ 
+     store = NoteStore()
+     app.extensions["notes_store"] = store
+@@ -28,7 +22,7 @@ def create_app(config: dict | None = None) -> Flask:
+     app.register_blueprint(pages)
+     register_filters(app)
+ 
+-    @app.before_first_request
++    @app.before_request
+     def seed() -> None:
+         if app.config["SEED"] and store.is_empty():
+             seed_notes(store)
+diff --git a/src/notes/filters.py b/src/notes/filters.py
+index e8d9501..81a82ef 100644
+--- a/src/notes/filters.py
++++ b/src/notes/filters.py
+@@ -1,6 +1,7 @@
+ """Template filters: safe HTML snippets built from note fields."""
+ 
+-from flask import Flask, Markup, escape
++from flask import Flask
++from markupsafe import Markup, escape
+ 
+ from notes.store import Note
+ 
+diff --git a/src/notes/json_support.py b/src/notes/json_support.py
+index a880ec7..c609e49 100644
+--- a/src/notes/json_support.py
++++ b/src/notes/json_support.py
+@@ -1,23 +1,30 @@
+-"""How the API writes JSON: dates as ISO strings, decimals as strings, sets as sorted lists."""
++"""How the API writes JSON: dates as ISO strings, decimals as strings, sets as sorted lists,
++keys in insertion order, text as UTF-8."""
+ 
+ from datetime import date, datetime
+ from decimal import Decimal
+ 
+-from flask.json import JSONEncoder
++from flask.json.provider import DefaultJSONProvider
+ 
+ from notes.store import Note
+ 
+ 
+-class NotesJSONEncoder(JSONEncoder):
+-    def default(self, obj):
+-        if isinstance(obj, datetime):
+-            return obj.isoformat(timespec="seconds")
+-        if isinstance(obj, date):
+-            return obj.isoformat()
+-        if isinstance(obj, Decimal):
+-            return str(obj)
+-        if isinstance(obj, (set, frozenset)):
+-            return sorted(obj)
+-        if isinstance(obj, Note):
+-            return obj.to_dict()
+-        return super().default(obj)
++def _default(obj):
++    if isinstance(obj, datetime):
++        return obj.isoformat(timespec="seconds")
++    if isinstance(obj, date):
++        return obj.isoformat()
++    if isinstance(obj, Decimal):
++        return str(obj)
++    if isinstance(obj, (set, frozenset)):
++        return sorted(obj)
++    if isinstance(obj, Note):
++        return obj.to_dict()
++    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
++
++
++class NotesJSONProvider(DefaultJSONProvider):
++    default = staticmethod(_default)
++    sort_keys = False
++    ensure_ascii = False
++    compact = True
+diff --git a/src/notes/pages.py b/src/notes/pages.py
+index 29ebd52..2bcfa68 100644
+--- a/src/notes/pages.py
++++ b/src/notes/pages.py
+@@ -1,6 +1,7 @@
+ """The HTML pages: the list and one note."""
+ 
+-from flask import Blueprint, Markup, abort, current_app, escape, render_template_string
++from flask import Blueprint, abort, current_app, render_template_string
++from markupsafe import Markup, escape
+ 
+ from notes.store import NoteStore
+ 
+diff --git a/src/notes/slugs.py b/src/notes/slugs.py
+index 3d84d85..dc2edc0 100644
+--- a/src/notes/slugs.py
++++ b/src/notes/slugs.py
+@@ -2,9 +2,9 @@
+ 
+ import re
+ import unicodedata
++from urllib.parse import quote
+ 
+-from werkzeug.security import safe_join
+-from werkzeug.urls import url_quote
++from werkzeug.utils import safe_join
+ 
+ EXPORT_FOLDER = "exports"
+ 
+@@ -18,7 +18,7 @@ def slugify(title: str) -> str:
+ 
+ def quoted_slug(title: str) -> str:
+     """The slug as it appears in a URL (percent-encoded, though slugs rarely need it)."""
+-    return url_quote(slugify(title))
++    return quote(slugify(title))
+ 
+ 
+ def export_filename(title: str) -> str:

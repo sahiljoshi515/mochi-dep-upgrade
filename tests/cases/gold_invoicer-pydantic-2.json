@@ -1,0 +1,91 @@
+{
+ "task": "upgrade-dependency",
+ "arguments": {
+  "project": "invoicer-pydantic-2"
+ },
+ "steps": [
+  {
+   "tool": "start_project",
+   "arguments": {
+    "project": "invoicer-pydantic-2"
+   },
+   "save_as": "start"
+  },
+  {
+   "tool": "write_file",
+   "arguments": {
+    "files": [
+     {
+      "path": "dep-upgrade/invoicer-pydantic-2/pyproject.toml",
+      "content": "[build-system]\nrequires = [\"hatchling>=1.25\"]\nbuild-backend = \"hatchling.build\"\n\n[project]\nname = \"invoicer\"\nversion = \"1.4.0\"\ndescription = \"Invoice models, pricing, validation and reports for a small billing service\"\nreadme = \"README.md\"\nrequires-python = \">=3.12\"\ndependencies = [\n    \"pydantic==2.14.1\",\n    \"pydantic-settings>=2.10\",\n]\n\n[dependency-groups]\ndev = [\n    \"pytest>=8\",\n]\n\n[tool.hatch.build.targets.wheel]\npackages = [\"src/invoicer\"]\n\n[tool.pytest.ini_options]\ntestpaths = [\"tests\"]\n"
+     },
+     {
+      "path": "dep-upgrade/invoicer-pydantic-2/src/invoicer/models.py",
+      "content": "\"\"\"The invoice domain: customers, line items and invoices.\n\nEvery model is immutable once built, strips its strings and rejects unknown fields.\n\"\"\"\n\nfrom datetime import date\nfrom decimal import Decimal\nfrom typing import List, Literal, Optional\n\nfrom pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator\n\nCURRENCIES = (\"USD\", \"EUR\", \"GBP\")\nNUMBER_PATTERN = r\"^INV-\\d{4}-\\d{4}$\"\nSKU_PATTERN = r\"^[A-Z]{3}-\\d{3}$\"\nEMAIL_PATTERN = r\"^[^@\\s]+@[^@\\s]+\\.[a-z]{2,}$\"\nVAT_PATTERN = r\"^[A-Z]{2}[0-9A-Z]{2,12}$\"\nCENTS = Decimal(\"0.01\")\n\n\nclass Customer(BaseModel):\n    model_config = ConfigDict(str_strip_whitespace=True, frozen=True, extra=\"forbid\")\n\n    name: str = Field(..., min_length=1, max_length=80)\n    email: str = Field(..., pattern=EMAIL_PATTERN)\n    vat_id: Optional[str] = Field(None, pattern=VAT_PATTERN)\n    country: str = Field(\"US\", min_length=2, max_length=2)\n\n    @field_validator(\"country\")\n    @classmethod\n    def country_code_is_upper(cls, value: str) -> str:\n        return value.upper()\n\n    @field_validator(\"email\")\n    @classmethod\n    def email_is_lower(cls, value: str) -> str:\n        return value.lower()\n\n\nclass LineItem(BaseModel):\n    model_config = ConfigDict(str_strip_whitespace=True, frozen=True, extra=\"forbid\")\n\n    sku: str = Field(..., pattern=SKU_PATTERN)\n    description: str = Field(..., min_length=1, max_length=200)\n    quantity: int = Field(..., gt=0, le=10000)\n    unit_price: Decimal = Field(..., ge=0, max_digits=10, decimal_places=2)\n    discount_pct: Decimal = Field(Decimal(\"0\"), ge=0, le=100)\n\n    @field_validator(\"sku\", mode=\"before\")\n    @classmethod\n    def sku_is_upper(cls, value):\n        if isinstance(value, str):\n            return value.strip().upper()\n        return value\n\n    @property\n    def gross(self) -> Decimal:\n        return (self.unit_price * self.quantity).quantize(CENTS)\n\n    @property\n    def net(self) -> Decimal:\n        kept = (Decimal(100) - self.discount_pct) / Decimal(100)\n        return (self.unit_price * self.quantity * kept).quantize(CENTS)\n\n\nclass Invoice(BaseModel):\n    model_config = ConfigDict(str_strip_whitespace=True, frozen=True, extra=\"forbid\")\n\n    number: str = Field(..., pattern=NUMBER_PATTERN)\n    kind: Literal[\"invoice\"] = \"invoice\"\n    customer: Customer\n    issued: date\n    due: date\n    currency: str = Field(\"USD\", min_length=3, max_length=3)\n    items: List[LineItem] = Field(..., min_length=1, max_length=50)\n    reference: Optional[str] = None\n    notes: Optional[str] = Field(None, max_length=500)\n\n    @field_validator(\"currency\")\n    @classmethod\n    def currency_is_known(cls, value: str) -> str:\n        value = value.upper()\n        if value not in CURRENCIES:\n            raise ValueError(f\"unsupported currency {value!r}; use one of {', '.join(CURRENCIES)}\")\n        return value\n\n    @model_validator(mode=\"after\")\n    def due_is_not_before_issued(self) -> \"Invoice\":\n        if self.due < self.issued:\n            raise ValueError(\"due date is before the issue date\")\n        return self\n\n    @property\n    def subtotal(self) -> Decimal:\n        return sum((item.net for item in self.items), Decimal(\"0\")).quantize(CENTS)\n\n    @property\n    def item_count(self) -> int:\n        return sum(item.quantity for item in self.items)\n\n    def with_reference(self, reference: str) -> \"Invoice\":\n        return self.model_copy(update={\"reference\": reference.strip()})\n"
+     },
+     {
+      "path": "dep-upgrade/invoicer-pydantic-2/src/invoicer/pricing.py",
+      "content": "\"\"\"Money: line totals, subtotal, tax, total and discounts. All amounts are Decimals to the cent.\"\"\"\n\nfrom decimal import ROUND_HALF_UP, Decimal\nfrom typing import List\n\nfrom invoicer.errors import InvoiceError\nfrom invoicer.models import CENTS, Invoice\nfrom invoicer.settings import BillingSettings\n\n\ndef _cents(amount: Decimal) -> Decimal:\n    return amount.quantize(CENTS, rounding=ROUND_HALF_UP)\n\n\ndef line_totals(invoice: Invoice) -> List[dict]:\n    \"\"\"Each line as a dict with its gross and net amounts added.\"\"\"\n    rows = []\n    for item in invoice.items:\n        row = item.model_dump()\n        row[\"gross\"] = item.gross\n        row[\"net\"] = item.net\n        rows.append(row)\n    return rows\n\n\ndef subtotal(invoice: Invoice) -> Decimal:\n    return invoice.subtotal\n\n\ndef tax(invoice: Invoice, settings: BillingSettings) -> Decimal:\n    return _cents(invoice.subtotal * settings.tax_rate)\n\n\ndef total(invoice: Invoice, settings: BillingSettings) -> Decimal:\n    return _cents(invoice.subtotal + tax(invoice, settings))\n\n\ndef late_fee(invoice: Invoice, settings: BillingSettings, days_late: int) -> Decimal:\n    \"\"\"A flat percentage of the total once an invoice is late, zero otherwise.\"\"\"\n    if days_late <= 0:\n        return Decimal(\"0.00\")\n    return _cents(total(invoice, settings) * settings.late_fee_pct / Decimal(100))\n\n\ndef apply_discount(invoice: Invoice, pct: Decimal) -> Invoice:\n    \"\"\"A new invoice with every line discounted by ``pct`` percent; the original is unchanged.\"\"\"\n    pct = Decimal(pct)\n    if pct < 0 or pct > 100:\n        raise InvoiceError(f\"discount must be between 0 and 100 percent, not {pct}\")\n    items = [item.model_copy(update={\"discount_pct\": pct}) for item in invoice.items]\n    return invoice.model_copy(update={\"items\": items})\n\n\ndef split_by_sku(invoice: Invoice) -> dict:\n    \"\"\"Net amount per SKU, merging repeated SKUs.\"\"\"\n    totals: dict = {}\n    for item in invoice.items:\n        totals[item.sku] = _cents(totals.get(item.sku, Decimal(\"0\")) + item.net)\n    return totals\n"
+     },
+     {
+      "path": "dep-upgrade/invoicer-pydantic-2/src/invoicer/reports.py",
+      "content": "\"\"\"Reports over invoices: summary lines, per-customer totals, overdue invoices and rows.\"\"\"\n\nfrom datetime import date\nfrom decimal import Decimal\nfrom typing import Dict, Iterable, List\n\nfrom invoicer.models import CENTS, Invoice\nfrom invoicer.pricing import total\nfrom invoicer.settings import BillingSettings\n\n\ndef summary_line(invoice: Invoice, settings: BillingSettings) -> str:\n    amount = total(invoice, settings)\n    return f\"{invoice.number} {invoice.customer.name}: {invoice.item_count} items, {amount} {invoice.currency}, due {invoice.due.isoformat()}\"\n\n\ndef customer_totals(invoices: Iterable[Invoice], settings: BillingSettings) -> Dict[str, Decimal]:\n    \"\"\"Total billed per customer name, sorted by name.\"\"\"\n    totals: Dict[str, Decimal] = {}\n    for invoice in invoices:\n        name = invoice.customer.name\n        totals[name] = (totals.get(name, Decimal(\"0\")) + total(invoice, settings)).quantize(CENTS)\n    return dict(sorted(totals.items()))\n\n\ndef overdue(invoices: Iterable[Invoice], today: date) -> List[str]:\n    \"\"\"Numbers of the invoices whose due date is before ``today``, oldest first.\"\"\"\n    late = [invoice for invoice in invoices if invoice.due < today]\n    late.sort(key=lambda invoice: (invoice.due, invoice.number))\n    return [invoice.number for invoice in late]\n\n\ndef as_rows(invoices: Iterable[Invoice], settings: BillingSettings) -> List[dict]:\n    \"\"\"One flat row per invoice: number, dates, currency, item count and total.\"\"\"\n    rows = []\n    for invoice in invoices:\n        row = invoice.model_dump(include={\"number\", \"issued\", \"due\", \"currency\"})\n        row[\"items\"] = invoice.item_count\n        row[\"total\"] = total(invoice, settings)\n        rows.append(row)\n    return rows\n\n\ndef by_currency(invoices: Iterable[Invoice], settings: BillingSettings) -> Dict[str, Decimal]:\n    totals: Dict[str, Decimal] = {}\n    for invoice in invoices:\n        totals[invoice.currency] = (totals.get(invoice.currency, Decimal(\"0\")) + total(invoice, settings)).quantize(CENTS)\n    return totals\n"
+     },
+     {
+      "path": "dep-upgrade/invoicer-pydantic-2/src/invoicer/serialization.py",
+      "content": "\"\"\"Invoices as JSON and plain dicts, and the JSON schema clients validate against.\"\"\"\n\nimport json\n\nfrom invoicer.models import Invoice\n\n\ndef invoice_to_json(invoice: Invoice) -> str:\n    \"\"\"Stable JSON: sorted keys, two-space indent, dates as ISO strings, decimals as strings.\"\"\"\n    return json.dumps(invoice.model_dump(mode=\"json\"), indent=2, sort_keys=True)\n\n\ndef invoice_from_json(text: str) -> Invoice:\n    return Invoice.model_validate_json(text)\n\n\ndef invoice_from_dict(data: dict) -> Invoice:\n    return Invoice.model_validate(data)\n\n\ndef invoice_schema() -> dict:\n    \"\"\"The invoice's JSON schema.\"\"\"\n    return Invoice.model_json_schema()\n\n\ndef to_record(invoice: Invoice) -> dict:\n    \"\"\"The invoice as a flat record for storage: the customer's name only, no notes.\"\"\"\n    data = invoice.model_dump(exclude={\"notes\", \"customer\"})\n    data[\"customer_name\"] = invoice.customer.name\n    data[\"subtotal\"] = invoice.subtotal\n    return data\n\n\ndef items_as_dicts(invoice: Invoice) -> list:\n    \"\"\"Each line as plain values (strings for decimals), ready for JSON.\"\"\"\n    return [\n        {\n            \"sku\": item.sku,\n            \"description\": item.description,\n            \"quantity\": item.quantity,\n            \"unit_price\": str(item.unit_price),\n            \"discount_pct\": str(item.discount_pct),\n        }\n        for item in invoice.items\n    ]\n"
+     }
+    ]
+   }
+  },
+  {
+   "tool": "write_file",
+   "arguments": {
+    "files": [
+     {
+      "path": "dep-upgrade/invoicer-pydantic-2/src/invoicer/settings.py",
+      "content": "\"\"\"Billing settings, from the environment (prefix ``INVOICER_``) or explicit overrides.\"\"\"\n\nfrom decimal import Decimal\n\nfrom pydantic import Field, field_validator\nfrom pydantic_settings import BaseSettings, SettingsConfigDict\n\nfrom invoicer.models import CURRENCIES\n\n\nclass BillingSettings(BaseSettings):\n    model_config = SettingsConfigDict(env_prefix=\"INVOICER_\", case_sensitive=False, str_strip_whitespace=True)\n\n    tax_rate: Decimal = Field(Decimal(\"0.0825\"), ge=0, le=1)\n    currency: str = \"USD\"\n    payment_days: int = Field(30, ge=1, le=365)\n    company_name: str = Field(\"Acme Billing\", min_length=1)\n    late_fee_pct: Decimal = Field(Decimal(\"1.5\"), ge=0, le=20)\n\n    @field_validator(\"currency\")\n    @classmethod\n    def currency_is_known(cls, value: str) -> str:\n        value = value.upper()\n        if value not in CURRENCIES:\n            raise ValueError(f\"unsupported currency {value!r}\")\n        return value\n\n\ndef load_settings(**overrides) -> BillingSettings:\n    \"\"\"Settings from the environment, with explicit keyword overrides winning.\"\"\"\n    return BillingSettings(**overrides)\n\n\ndef settings_summary(settings: BillingSettings) -> dict:\n    \"\"\"The settings as plain values, for logging.\"\"\"\n    return settings.model_dump()\n"
+     },
+     {
+      "path": "dep-upgrade/invoicer-pydantic-2/src/invoicer/validation.py",
+      "content": "\"\"\"Validating raw payloads before they become invoices: every problem as a plain record.\"\"\"\n\nfrom dataclasses import dataclass\nfrom typing import Dict, List, Tuple\n\nfrom pydantic import ValidationError\n\nfrom invoicer.models import Invoice\n\n\n@dataclass(frozen=True)\nclass Problem:\n    loc: Tuple\n    type: str\n    message: str\n\n    @property\n    def field(self) -> str:\n        return \".\".join(str(part) for part in self.loc)\n\n\ndef validate_payload(data: dict) -> List[Problem]:\n    \"\"\"Every validation problem of ``data`` as an invoice, in pydantic's order; [] when it is valid.\n    ``type`` is pydantic's own error type code.\"\"\"\n    try:\n        Invoice.model_validate(data)\n    except ValidationError as error:\n        return [Problem(loc=tuple(item[\"loc\"]), type=item[\"type\"], message=item[\"msg\"]) for item in error.errors()]\n    return []\n\n\ndef is_valid(data: dict) -> bool:\n    return not validate_payload(data)\n\n\ndef problems_by_field(data: dict) -> Dict[str, List[str]]:\n    \"\"\"Problem messages grouped by dotted field name.\"\"\"\n    grouped: Dict[str, List[str]] = {}\n    for problem in validate_payload(data):\n        grouped.setdefault(problem.field, []).append(problem.message)\n    return grouped\n\n\ndef field_names() -> List[str]:\n    \"\"\"The invoice's field names, in declaration order.\"\"\"\n    return list(Invoice.model_fields)\n\n\ndef describe_fields() -> Dict[str, bool]:\n    \"\"\"Each invoice field and whether it is required.\"\"\"\n    return {name: field.is_required() for name, field in Invoice.model_fields.items()}\n"
+     }
+    ]
+   }
+  },
+  {
+   "tool": "sync",
+   "arguments": {
+    "project": "invoicer-pydantic-2"
+   },
+   "save_as": "sync"
+  },
+  {
+   "tool": "run_build",
+   "arguments": {
+    "project": "invoicer-pydantic-2"
+   },
+   "save_as": "build"
+  },
+  {
+   "tool": "run_tests",
+   "arguments": {
+    "project": "invoicer-pydantic-2",
+    "tests": []
+   },
+   "save_as": "tests"
+  },
+  {
+   "tool": "judge",
+   "arguments": {
+    "project": "invoicer-pydantic-2"
+   },
+   "save_as": "judge"
+  }
+ ],
+ "answer": "Upgraded pydantic to 2.14.1 and migrated 6 source file(s); build and tests pass.",
+ "expect": {
+  "valid": true,
+  "score_min": 1.0
+ }
+}

@@ -1,0 +1,279 @@
+diff --git a/pyproject.toml b/pyproject.toml
+index 17732e8..2db783a 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -9,7 +9,8 @@ description = "Invoice models, pricing, validation and reports for a small billi
+ readme = "README.md"
+ requires-python = ">=3.12"
+ dependencies = [
+-    "pydantic>=1.10.13,<2",
++    "pydantic==2.14.1",
++    "pydantic-settings>=2.10",
+ ]
+ 
+ [dependency-groups]
+diff --git a/src/invoicer/models.py b/src/invoicer/models.py
+index 5dd7434..1286912 100644
+--- a/src/invoicer/models.py
++++ b/src/invoicer/models.py
+@@ -5,9 +5,9 @@ Every model is immutable once built, strips its strings and rejects unknown fiel
+ 
+ from datetime import date
+ from decimal import Decimal
+-from typing import List, Optional
++from typing import List, Literal, Optional
+ 
+-from pydantic import BaseModel, Field, root_validator, validator
++from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+ 
+ CURRENCIES = ("USD", "EUR", "GBP")
+ NUMBER_PATTERN = r"^INV-\d{4}-\d{4}$"
+@@ -18,38 +18,35 @@ CENTS = Decimal("0.01")
+ 
+ 
+ class Customer(BaseModel):
++    model_config = ConfigDict(str_strip_whitespace=True, frozen=True, extra="forbid")
++
+     name: str = Field(..., min_length=1, max_length=80)
+-    email: str = Field(..., regex=EMAIL_PATTERN)
+-    vat_id: Optional[str] = Field(None, regex=VAT_PATTERN)
++    email: str = Field(..., pattern=EMAIL_PATTERN)
++    vat_id: Optional[str] = Field(None, pattern=VAT_PATTERN)
+     country: str = Field("US", min_length=2, max_length=2)
+ 
+-    class Config:
+-        anystr_strip_whitespace = True
+-        allow_mutation = False
+-        extra = "forbid"
+-
+-    @validator("country")
++    @field_validator("country")
++    @classmethod
+     def country_code_is_upper(cls, value: str) -> str:
+         return value.upper()
+ 
+-    @validator("email")
++    @field_validator("email")
++    @classmethod
+     def email_is_lower(cls, value: str) -> str:
+         return value.lower()
+ 
+ 
+ class LineItem(BaseModel):
+-    sku: str = Field(..., regex=SKU_PATTERN)
++    model_config = ConfigDict(str_strip_whitespace=True, frozen=True, extra="forbid")
++
++    sku: str = Field(..., pattern=SKU_PATTERN)
+     description: str = Field(..., min_length=1, max_length=200)
+     quantity: int = Field(..., gt=0, le=10000)
+     unit_price: Decimal = Field(..., ge=0, max_digits=10, decimal_places=2)
+     discount_pct: Decimal = Field(Decimal("0"), ge=0, le=100)
+ 
+-    class Config:
+-        anystr_strip_whitespace = True
+-        allow_mutation = False
+-        extra = "forbid"
+-
+-    @validator("sku", pre=True)
++    @field_validator("sku", mode="before")
++    @classmethod
+     def sku_is_upper(cls, value):
+         if isinstance(value, str):
+             return value.strip().upper()
+@@ -66,34 +63,31 @@ class LineItem(BaseModel):
+ 
+ 
+ class Invoice(BaseModel):
+-    number: str = Field(..., regex=NUMBER_PATTERN)
+-    kind: str = Field("invoice", const=True)
++    model_config = ConfigDict(str_strip_whitespace=True, frozen=True, extra="forbid")
++
++    number: str = Field(..., pattern=NUMBER_PATTERN)
++    kind: Literal["invoice"] = "invoice"
+     customer: Customer
+     issued: date
+     due: date
+     currency: str = Field("USD", min_length=3, max_length=3)
+-    items: List[LineItem] = Field(..., min_items=1, max_items=50)
+-    reference: Optional[str]
++    items: List[LineItem] = Field(..., min_length=1, max_length=50)
++    reference: Optional[str] = None
+     notes: Optional[str] = Field(None, max_length=500)
+ 
+-    class Config:
+-        anystr_strip_whitespace = True
+-        allow_mutation = False
+-        extra = "forbid"
+-
+-    @validator("currency")
++    @field_validator("currency")
++    @classmethod
+     def currency_is_known(cls, value: str) -> str:
+         value = value.upper()
+         if value not in CURRENCIES:
+             raise ValueError(f"unsupported currency {value!r}; use one of {', '.join(CURRENCIES)}")
+         return value
+ 
+-    @root_validator
+-    def due_is_not_before_issued(cls, values):
+-        issued, due = values.get("issued"), values.get("due")
+-        if issued is not None and due is not None and due < issued:
++    @model_validator(mode="after")
++    def due_is_not_before_issued(self) -> "Invoice":
++        if self.due < self.issued:
+             raise ValueError("due date is before the issue date")
+-        return values
++        return self
+ 
+     @property
+     def subtotal(self) -> Decimal:
+@@ -104,4 +98,4 @@ class Invoice(BaseModel):
+         return sum(item.quantity for item in self.items)
+ 
+     def with_reference(self, reference: str) -> "Invoice":
+-        return self.copy(update={"reference": reference.strip()})
++        return self.model_copy(update={"reference": reference.strip()})
+diff --git a/src/invoicer/pricing.py b/src/invoicer/pricing.py
+index 7e01a11..1e46315 100644
+--- a/src/invoicer/pricing.py
++++ b/src/invoicer/pricing.py
+@@ -16,7 +16,7 @@ def line_totals(invoice: Invoice) -> List[dict]:
+     """Each line as a dict with its gross and net amounts added."""
+     rows = []
+     for item in invoice.items:
+-        row = item.dict()
++        row = item.model_dump()
+         row["gross"] = item.gross
+         row["net"] = item.net
+         rows.append(row)
+@@ -47,8 +47,8 @@ def apply_discount(invoice: Invoice, pct: Decimal) -> Invoice:
+     pct = Decimal(pct)
+     if pct < 0 or pct > 100:
+         raise InvoiceError(f"discount must be between 0 and 100 percent, not {pct}")
+-    items = [item.copy(update={"discount_pct": pct}) for item in invoice.items]
+-    return invoice.copy(update={"items": items})
++    items = [item.model_copy(update={"discount_pct": pct}) for item in invoice.items]
++    return invoice.model_copy(update={"items": items})
+ 
+ 
+ def split_by_sku(invoice: Invoice) -> dict:
+diff --git a/src/invoicer/reports.py b/src/invoicer/reports.py
+index 264e974..dde39bb 100644
+--- a/src/invoicer/reports.py
++++ b/src/invoicer/reports.py
+@@ -34,7 +34,7 @@ def as_rows(invoices: Iterable[Invoice], settings: BillingSettings) -> List[dict
+     """One flat row per invoice: number, dates, currency, item count and total."""
+     rows = []
+     for invoice in invoices:
+-        row = invoice.dict(include={"number", "issued", "due", "currency"})
++        row = invoice.model_dump(include={"number", "issued", "due", "currency"})
+         row["items"] = invoice.item_count
+         row["total"] = total(invoice, settings)
+         rows.append(row)
+diff --git a/src/invoicer/serialization.py b/src/invoicer/serialization.py
+index f6e0711..95f00ef 100644
+--- a/src/invoicer/serialization.py
++++ b/src/invoicer/serialization.py
+@@ -1,29 +1,31 @@
+ """Invoices as JSON and plain dicts, and the JSON schema clients validate against."""
+ 
++import json
++
+ from invoicer.models import Invoice
+ 
+ 
+ def invoice_to_json(invoice: Invoice) -> str:
+     """Stable JSON: sorted keys, two-space indent, dates as ISO strings, decimals as strings."""
+-    return invoice.json(indent=2, sort_keys=True)
++    return json.dumps(invoice.model_dump(mode="json"), indent=2, sort_keys=True)
+ 
+ 
+ def invoice_from_json(text: str) -> Invoice:
+-    return Invoice.parse_raw(text)
++    return Invoice.model_validate_json(text)
+ 
+ 
+ def invoice_from_dict(data: dict) -> Invoice:
+-    return Invoice.parse_obj(data)
++    return Invoice.model_validate(data)
+ 
+ 
+ def invoice_schema() -> dict:
+     """The invoice's JSON schema."""
+-    return Invoice.schema()
++    return Invoice.model_json_schema()
+ 
+ 
+ def to_record(invoice: Invoice) -> dict:
+     """The invoice as a flat record for storage: the customer's name only, no notes."""
+-    data = invoice.dict(exclude={"notes", "customer"})
++    data = invoice.model_dump(exclude={"notes", "customer"})
+     data["customer_name"] = invoice.customer.name
+     data["subtotal"] = invoice.subtotal
+     return data
+diff --git a/src/invoicer/settings.py b/src/invoicer/settings.py
+index e5b316c..4ea5dcf 100644
+--- a/src/invoicer/settings.py
++++ b/src/invoicer/settings.py
+@@ -2,24 +2,23 @@
+ 
+ from decimal import Decimal
+ 
+-from pydantic import BaseSettings, Field, validator
++from pydantic import Field, field_validator
++from pydantic_settings import BaseSettings, SettingsConfigDict
+ 
+ from invoicer.models import CURRENCIES
+ 
+ 
+ class BillingSettings(BaseSettings):
++    model_config = SettingsConfigDict(env_prefix="INVOICER_", case_sensitive=False, str_strip_whitespace=True)
++
+     tax_rate: Decimal = Field(Decimal("0.0825"), ge=0, le=1)
+     currency: str = "USD"
+     payment_days: int = Field(30, ge=1, le=365)
+     company_name: str = Field("Acme Billing", min_length=1)
+     late_fee_pct: Decimal = Field(Decimal("1.5"), ge=0, le=20)
+ 
+-    class Config:
+-        env_prefix = "INVOICER_"
+-        case_sensitive = False
+-        anystr_strip_whitespace = True
+-
+-    @validator("currency")
++    @field_validator("currency")
++    @classmethod
+     def currency_is_known(cls, value: str) -> str:
+         value = value.upper()
+         if value not in CURRENCIES:
+@@ -34,4 +33,4 @@ def load_settings(**overrides) -> BillingSettings:
+ 
+ def settings_summary(settings: BillingSettings) -> dict:
+     """The settings as plain values, for logging."""
+-    return settings.dict()
++    return settings.model_dump()
+diff --git a/src/invoicer/validation.py b/src/invoicer/validation.py
+index 5a3e61b..5a7705d 100644
+--- a/src/invoicer/validation.py
++++ b/src/invoicer/validation.py
+@@ -23,7 +23,7 @@ def validate_payload(data: dict) -> List[Problem]:
+     """Every validation problem of ``data`` as an invoice, in pydantic's order; [] when it is valid.
+     ``type`` is pydantic's own error type code."""
+     try:
+-        Invoice.parse_obj(data)
++        Invoice.model_validate(data)
+     except ValidationError as error:
+         return [Problem(loc=tuple(item["loc"]), type=item["type"], message=item["msg"]) for item in error.errors()]
+     return []
+@@ -43,9 +43,9 @@ def problems_by_field(data: dict) -> Dict[str, List[str]]:
+ 
+ def field_names() -> List[str]:
+     """The invoice's field names, in declaration order."""
+-    return list(Invoice.__fields__)
++    return list(Invoice.model_fields)
+ 
+ 
+ def describe_fields() -> Dict[str, bool]:
+     """Each invoice field and whether it is required."""
+-    return {name: field.required for name, field in Invoice.__fields__.items()}
++    return {name: field.is_required() for name, field in Invoice.model_fields.items()}

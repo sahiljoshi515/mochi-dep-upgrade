@@ -1,0 +1,56 @@
+{
+  "id": "arrays-numpy-2",
+  "title": "arrays: NumPy 1.26 to 2.5",
+  "dependency": "numpy",
+  "import_name": "numpy",
+  "package": "arrays",
+  "from_spec": "numpy>=1.26,<2",
+  "from_version": "1.26.4",
+  "target_version": "2.5.4",
+  "allowed_new_dependencies": [],
+  "allowed_collateral": [],
+  "forbidden_patterns": [
+    "warnings\\.(filterwarnings|simplefilter)",
+    "catch_warnings",
+    "sys\\.modules\\[",
+    "setattr\\(\\s*(numpy|np)\\b",
+    "^\\s*(numpy|np)(\\.\\w+)+\\s*=[^=]",
+    "set_printoptions",
+    "_set_promotion_state",
+    "NPY_PROMOTION_STATE",
+    "\\b(import|from)\\s+_?pytest\\b",
+    "\\batexit\\b",
+    "os\\._exit",
+    "sys\\.argv",
+    "judge",
+    "importlib\\.reload",
+    "__import__\\(",
+    "\\bctypes\\b",
+    "\\bsubprocess\\b",
+    "PYTHONWARNINGS"
+  ],
+  "warning_flags": [
+    "-W",
+    "error::DeprecationWarning"
+  ],
+  "hidden_test_ids": [
+    "test_hidden_arrays.py::test_as_array_accepts_lists_and_shares_arrays",
+    "test_hidden_arrays.py::test_describe_product_and_sign",
+    "test_hidden_arrays.py::test_fill_missing_and_has_missing",
+    "test_hidden_arrays.py::test_from_records_orders_columns_and_reports_missing_fields",
+    "test_hidden_arrays.py::test_running_product",
+    "test_hidden_arrays.py::test_summary_text_uses_plain_numbers",
+    "test_hidden_geometry.py::test_area_under_and_stacking",
+    "test_hidden_geometry.py::test_mask_members_and_rescale",
+    "test_hidden_geometry.py::test_reduce_axis_reports_a_bad_axis",
+    "test_hidden_geometry.py::test_text_arrays_and_bytes_rows",
+    "test_hidden_geometry.py::test_turn_direction_signs"
+  ],
+  "max_new_files": 5,
+  "max_added_lines": 600,
+  "build_hint": "uv build --wheel (hatchling); the wheel holds src/arrays",
+  "test_hint": "pytest tests/ in the project's venv with -W error::DeprecationWarning; NumPy's deprecations count as failures",
+  "notes": [
+    "The README's contract must hold: summary_text prints plain numbers, as_array takes lists without copying arrays, reduce_axis raises ArrayError for a bad axis."
+  ]
+}

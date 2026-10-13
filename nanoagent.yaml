@@ -1,0 +1,53 @@
+_ > nanoagent.plugin.manifest.ManifestConfig:
+id: dep-upgrade
+name: Dependency Upgrade
+version: 0.1.0
+status: ready
+
+runtime > nanoagent.plugin.manifest.RuntimeConfig:
+  type: mcp_stdio
+  command: [uv, run, --frozen, python, -m, plugin]
+
+permissions > nanoagent.plugin.manifest.PermissionsConfig:
+  network > nanoagent.plugin.manifest.NetworkConfig:
+    hosts: [pypi.org, files.pythonhosted.org]
+  filesystem > nanoagent.plugin.manifest.FilesystemConfig:
+    write: [workspace]
+
+# One entry per contract.Tool; its input and output classes are contract.TOOLS's.
+tools > dict[contract.Tool, nanoagent.plugin.manifest.ToolConfig]:
+  pin_project:
+    description: Pin the pristine project's hashes, requirements, locked versions, limits and hidden tests; the task's reference
+  start_project:
+    description: Copy the project into dep-upgrade/<project>/, commit it, create its venv on this Python and install its locked environment; call again if complete is false
+  list_files:
+    description: List files and folders under a workspace path, recursively, sorted and paginated
+  read_file:
+    description: Read up to 200 lines (8 KB) of a text file in the workspace
+  search:
+    description: Search files under a workspace folder for a regular expression, up to 50 hits
+  write_file:
+    description: Write 1 to 5 files in one call, all or none; only pyproject.toml (its dependencies) and .py files under src/<package>/ of a started project
+  sync:
+    description: Re-lock the project with uv and install the result into its venv; returns the direct dependencies' installed versions; call again if complete is false
+  run_build:
+    description: Build the project's wheel with uv build; returns the log's tail
+  run_tests:
+    description: Run the project's public tests in its venv with warnings as errors; returns counts, failed tests and the log's tail
+  judge:
+    description: Record the final state in stages (lock, installed version, build, pristine public tests, hidden tests, scan); call again if complete is false
+
+# One entry per contract.Task; its input class is contract.TASKS's.
+tasks > dict[contract.Task, nanoagent.plugin.manifest.TaskConfig]:
+  upgrade-dependency:
+    description: Upgrade one dependency of a small Python project to its target version and change the code so the project builds and its tests pass
+    runner: agent
+    tools: [start_project, list_files, read_file, search, write_file, sync, run_build, run_tests, judge]
+    reference: pin_project
+    instructions: |-
+      1. Call start_project with the task's project. It sets the project up under dep-upgrade/<project>/ and returns the dependency with its current and target versions, the package, the source files that import the dependency (uses_dependency), the layout and the rules. If it returns complete: false, call it again.
+      2. Read the files listed under uses_dependency with read_file (and pyproject.toml); search finds other uses. The tests under tests/ show how the package is used; they are read-only, as are README.md and uv.lock.
+      3. Write the changes with write_file, up to 5 files per call: pyproject.toml with only the dependency's requirement raised so that exactly the target version locks (for example name==target; collateral and additions only as start_project lists), and the package's modules migrated to the new API. No compatibility shims: no old-API layers, no warning filters, no monkeypatching the library, no sniffing for tests.
+      4. Call sync: it re-locks and installs (call again if complete: false); if the requirement does not resolve, fix it and sync again.
+      5. When steps allow, run_build and run_tests show what is left; tests run with deprecation warnings as errors, so deprecated calls must go too. Hidden tests use the package the way the public tests do, on paths the public tests may not cover, and run at judging.
+      6. Call judge last, after the final sync (call again if complete: false). Then report in one paragraph what the upgrade changed and the judge's counts. A run that ends without a complete judge is not accepted.

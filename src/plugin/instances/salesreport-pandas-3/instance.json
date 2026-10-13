@@ -1,0 +1,61 @@
+{
+  "id": "salesreport-pandas-3",
+  "title": "salesreport: pandas 2.1 to 3.0",
+  "dependency": "pandas",
+  "import_name": "pandas",
+  "package": "salesreport",
+  "from_spec": "pandas>=2.1,<2.2",
+  "from_version": "2.1.4",
+  "target_version": "3.0.6",
+  "allowed_new_dependencies": [],
+  "allowed_collateral": [
+    "numpy"
+  ],
+  "forbidden_patterns": [
+    "warnings\\.(filterwarnings|simplefilter)",
+    "catch_warnings",
+    "sys\\.modules\\[",
+    "setattr\\(\\s*(pandas|pd|numpy|np)\\b",
+    "^\\s*(pandas|pd|numpy|np)(\\.\\w+)+\\s*=[^=]",
+    "set_option\\(",
+    "option_context\\(",
+    "\\.options\\.",
+    "\\b(import|from)\\s+_?pytest\\b",
+    "\\batexit\\b",
+    "os\\._exit",
+    "sys\\.argv",
+    "judge",
+    "importlib\\.reload",
+    "__import__\\(",
+    "\\bctypes\\b",
+    "\\bsubprocess\\b",
+    "PYTHONWARNINGS"
+  ],
+  "warning_flags": [
+    "-W",
+    "error::DeprecationWarning",
+    "-W",
+    "error::FutureWarning"
+  ],
+  "hidden_test_ids": [
+    "test_hidden_cleaning.py::test_clean_fills_prices_and_notes_and_titles_text",
+    "test_hidden_cleaning.py::test_clean_leaves_the_export_alone",
+    "test_hidden_cleaning.py::test_flag_large_orders_marks_rows_above_the_threshold",
+    "test_hidden_cleaning.py::test_load_prices_sorts_by_date",
+    "test_hidden_cleaning.py::test_select_region_and_rush_orders_are_independent_copies",
+    "test_hidden_metrics.py::test_first_week_keeps_seven_days_from_the_first_order",
+    "test_hidden_metrics.py::test_format_table_shows_money_and_no_index",
+    "test_hidden_metrics.py::test_monthly_revenue_is_indexed_by_month_end",
+    "test_hidden_metrics.py::test_regional_share_sums_to_one",
+    "test_hidden_metrics.py::test_top_products_counts_orders"
+  ],
+  "max_new_files": 5,
+  "max_added_lines": 600,
+  "build_hint": "uv build --wheel (hatchling); the wheel holds src/salesreport",
+  "test_hint": "pytest tests/ in the project's venv with -W error::DeprecationWarning -W error::FutureWarning; pandas' deprecations are FutureWarnings and count as failures",
+  "notes": [
+    "numpy is not a direct dependency; its locked version may move with pandas.",
+    "pandas options may not be set in the package: no set_option, option_context or pd.options; the new defaults (copy-on-write, the str dtype) must be worked with.",
+    "The README's contract must hold: functions return new frames and never change the one given; clean() fills notes, carries prices forward and title-cases every text column."
+  ]
+}
