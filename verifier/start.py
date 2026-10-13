@@ -1,5 +1,5 @@
-"""start_project: the project copied, committed and installed under dep-upgrade/<project>/, in one
-call or several (``complete: false`` asks for another call)."""
+"""start_project: the project copied and committed under dep-upgrade/<project>/ and its environment
+installed outside the workspace, in one call or several (``complete: false`` asks for another call)."""
 
 from pathlib import Path
 
@@ -32,6 +32,6 @@ def verify_output(input_value, output_value, workspace):
         return result(False, "a finished start has nothing next")
     if not is_version(output_value.current_version) or output_value.current_version == output_value.target_version:
         return result(False, "the current version is not a version short of the target")
-    if not output_value.layout or not (root / ".venv").is_dir():
+    if not output_value.layout:
         return result(False, "the project is not installed")
     return result(True, "the project is set up", root=output_value.root)

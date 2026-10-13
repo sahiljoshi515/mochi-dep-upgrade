@@ -420,8 +420,7 @@ def test_incomplete_judgement_is_refused(tmp_path: Path):
 
 
 def test_start_output_checks(tmp_path: Path):
-    workspace, root, _ = gold_workspace(tmp_path)
-    (root / ".venv").mkdir()
+    workspace, _, _ = gold_workspace(tmp_path)
     output = {
         "root": f"dep-upgrade/{PROJECT}",
         "complete": True,

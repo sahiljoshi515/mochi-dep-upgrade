@@ -50,6 +50,14 @@ MAX_LINE = 200
 # Seconds a long tool call may spend before it returns `complete: false` (hosted cap: 180 s
 # including the launch).
 BUDGET = 140.0
+# No tool writes a file this large into the workspace: the host syncs the workspace back and
+# refuses files over 10 MB.
+MAX_WORKSPACE_FILE = 8 * 1024 * 1024
+# Where a workspace's venvs, build output, run folders and subprocess HOME live: outside the
+# workspace, under the temp folder, named after the workspace path.
+SCRATCH_PREFIX = "nanoagent-dep-upgrade-"
+# Scratch folders of other workspaces untouched for this long are removed, best effort.
+PRUNE_AFTER = 12 * 3600
 # The plugin's own folder: never shown in an output (see scrub).
 PLUGIN_ROOT = Path(__file__).resolve().parents[2]
 
@@ -58,12 +66,14 @@ class ToolError(ValueError):
     """A tool refuses: the message is plain and names no plugin path."""
 
 
-def scrub(lines: Iterable[str], *hidden: Path) -> list[str]:
-    """``lines`` with the plugin's folder and any other ``hidden`` folder replaced by a marker,
-    each cut to :data:`MAX_LINE` characters."""
+def scrub(lines: Iterable[str], *hidden: Path, env: Path | None = None) -> list[str]:
+    """``lines`` with the plugin's folder, the scratch folder ``env`` and any other ``hidden``
+    folder replaced by a marker, each cut to :data:`MAX_LINE` characters."""
     out = []
     for line in lines:
         text = line.replace(str(PLUGIN_ROOT), "<plugin>")
+        if env is not None:
+            text = text.replace(str(env), "<env>")
         for folder in hidden:
             text = text.replace(str(folder), "<workspace>")
         out.append(text[:MAX_LINE])
@@ -98,6 +108,58 @@ def workspace_relative(workspace: Path, path: Path) -> str:
 def is_protected(rel: str) -> bool:
     """Whether the project-relative path ``rel`` is one the task may not change."""
     return rel == "README.md" or rel.split("/", 1)[0] == "tests"
+
+
+# ----- the scratch folder outside the workspace -----
+
+
+def scratch_home(workspace: Path) -> Path:
+    """``<tmp>/nanoagent-dep-upgrade-<sha256 of the workspace path>``: the one folder outside the
+    workspace this plugin writes to (venvs, wheels, run folders, HOME). Under the macOS sandbox
+    the temp folder is the sandbox home; on the hosted runner it is /tmp."""
+    digest = hashlib.sha256(str(workspace.resolve()).encode("utf-8")).hexdigest()
+    return Path(tempfile.gettempdir()).resolve() / f"{SCRATCH_PREFIX}{digest}"
+
+
+def oversized(root: Path, limit: int = MAX_WORKSPACE_FILE) -> list[tuple[str, int]]:
+    """``(relative path, bytes)`` of every file under ``root`` over ``limit``, every folder included."""
+    found: list[tuple[str, int]] = []
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        size = path.stat().st_size
+        if size > limit:
+            found.append((path.relative_to(root).as_posix(), size))
+    return found
+
+
+def check_workspace_sizes(root: Path) -> None:
+    """Refuse to leave a file over :data:`MAX_WORKSPACE_FILE` in the workspace."""
+    big = oversized(root)
+    if big:
+        rel, size = big[0]
+        raise ToolError(f"{rel} is {size} bytes, over the {MAX_WORKSPACE_FILE // (1024 * 1024)} MB limit for files in the workspace")
+
+
+def prune_scratch(keep: Path, *, older_than: float = PRUNE_AFTER) -> int:
+    """Remove other workspaces' scratch folders untouched for ``older_than`` seconds; returns how many."""
+    removed = 0
+    now = time.time()
+    try:
+        candidates = list(keep.parent.iterdir())
+    except OSError:
+        return 0
+    for path in candidates:
+        if path == keep or not path.name.startswith(SCRATCH_PREFIX) or path.is_symlink() or not path.is_dir():
+            continue
+        try:
+            if now - path.stat().st_mtime < older_than:
+                continue
+            shutil.rmtree(path, ignore_errors=True)
+            removed += 1
+        except OSError:
+            continue
+    return removed
 
 
 # ----- budget and progress -----

@@ -18,6 +18,7 @@ from slimconfig import build_output, output_schema
 
 import verifier
 from contract import TOOLS, PinOutput, Tool, UpgradeInput
+from plugin.common import oversized, scratch_home
 from plugin.instances import load_instance
 from plugin.tools_dev.patches import changed_files_of
 
@@ -98,6 +99,12 @@ def test_gold_upgrade_through_the_tools_is_valid(tmp_path: Path):
     pin = asyncio.run(with_server(tmp_path, body))
     found = verifier.verify_task("upgrade-dependency", build_output({"project": PROJECT}, UpgradeInput), build_output(pin, PinOutput), str(tmp_path))
     assert found["valid"] is True and found["score"] == 1.0, found
+    # Nothing heavy in the workspace: the venv, wheels and run folders live in the scratch home.
+    root = tmp_path / "dep-upgrade" / PROJECT
+    assert sorted(path.name for path in root.iterdir()) == [".git", ".judge", "README.md", "pyproject.toml", "src", "tests", "uv.lock"]
+    assert sorted(path.name for path in (root / ".judge").iterdir()) == ["diff.patch", "judgement.json", "progress.json", "ready.json"]
+    assert oversized(tmp_path) == []
+    assert (scratch_home(tmp_path) / PROJECT / ".venv" / "bin" / "python").exists()
 
 
 @NETWORK

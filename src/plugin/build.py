@@ -1,5 +1,5 @@
-"""Locking, installing, building and testing a project in its own venv: the agent's ``sync``
-(resumable), ``run_build`` and ``run_tests``, and the runs the judge shares with them."""
+"""Locking, installing, building and testing a project in its venv outside the workspace: the
+agent's ``sync`` (resumable), ``run_build`` and ``run_tests``, and the runs the judge shares."""
 
 from __future__ import annotations
 
@@ -11,20 +11,30 @@ from pathlib import Path
 
 from contract import BuildOutput, SyncOutput, TestsInput, TestsOutput, UpgradeInput
 from plugin.common import (
-    JUDGE_DIR,
     Budget,
     Completed,
     ToolError,
-    clean_env,
+    check_workspace_sizes,
     load_progress,
     run,
     save_progress,
+    scratch_home,
     scrub,
     sha256_file,
     uv,
 )
 from plugin.instances import Instance
-from plugin.project import direct_dependency_names, installed_versions, ready_root
+from plugin.project import (
+    INSTALLED_MARK,
+    direct_dependency_names,
+    ensure_venv,
+    installed_versions,
+    project_env,
+    ready_root,
+    scratch_for,
+    venv_dir,
+    venv_python,
+)
 
 RUNNER = Path(__file__).with_name("runners") / "pytest_json.py"
 LOCK_TIMEOUT = 90.0
@@ -33,14 +43,6 @@ BUILD_TIMEOUT = 120.0
 TESTS_TIMEOUT = 120.0
 MAX_TARGETS = 50
 INI = "[pytest]\naddopts =\nfilterwarnings =\n"
-
-
-def project_env(root: Path) -> dict[str, str]:
-    return clean_env(root / JUDGE_DIR / "home", extra={"UV_PROJECT_ENVIRONMENT": str(root / ".venv")})
-
-
-def venv_python(root: Path) -> Path:
-    return root / ".venv" / "bin" / "python"
 
 
 def direct_names(root: Path, inst: Instance) -> list[str]:
@@ -61,16 +63,20 @@ def sync(given: UpgradeInput, workspace: Path, *, budget: Budget | None = None) 
     ``complete: false`` with the stage recorded, so the next call carries on."""
     budget = budget or Budget()
     root, inst = ready_root(workspace, given.project.value)
-    env = project_env(root)
     progress = load_progress(root)
     stage = progress.setdefault("sync", {})
     tail: list[str] = []
+    python = venv_python(workspace, inst.id)
 
     def answer(*, ok: bool, complete: bool, next_step: str) -> SyncOutput:
         save_progress(root, progress)
-        installed = installed_versions(root, direct_names(root, inst), env)
-        return SyncOutput(ok=ok, complete=complete, next=next_step, installed=installed, tail=scrub(tail[-60:], workspace), seconds=round(budget.spent, 2))
+        installed = installed_versions(python, direct_names(root, inst), project_env(workspace, inst.id))
+        return SyncOutput(ok=ok, complete=complete, next=next_step, installed=installed, tail=scrub(tail[-60:], workspace, env=scratch_home(workspace)), seconds=round(budget.spent, 2))
 
+    note = ensure_venv(workspace, root, inst, budget)
+    if note:
+        return answer(ok=False, complete=False, next_step=note)
+    env = project_env(workspace, inst.id)
     pyproject_sha = sha256_file(root / "pyproject.toml")
     if stage.get("locked_for") != pyproject_sha:
         if not budget.allows(15):
@@ -96,6 +102,8 @@ def sync(given: UpgradeInput, workspace: Path, *, budget: Budget | None = None) 
         if not synced.ok:
             return answer(ok=False, complete=True, next_step="")
         stage["synced_for"] = lock_sha
+        (venv_dir(workspace, inst.id) / INSTALLED_MARK).write_text("installed from uv.lock\n", encoding="utf-8")
+    check_workspace_sizes(root)
     return answer(ok=True, complete=True, next_step="")
 
 
@@ -108,11 +116,15 @@ def build_wheel(root: Path, env: dict[str, str], out_dir: Path, timeout: float) 
     return done, (wheels[-1].name if done.ok and wheels else "")
 
 
-def run_build(given: UpgradeInput, workspace: Path) -> BuildOutput:
-    root, _ = ready_root(workspace, given.project.value)
-    env = project_env(root)
-    done, wheel = build_wheel(root, env, root / JUDGE_DIR / "dist", BUILD_TIMEOUT)
-    return BuildOutput(ok=bool(wheel), wheel=wheel, tail=scrub(done.tail, workspace), seconds=done.seconds)
+def run_build(given: UpgradeInput, workspace: Path, *, budget: Budget | None = None) -> BuildOutput:
+    budget = budget or Budget()
+    root, inst = ready_root(workspace, given.project.value)
+    note = ensure_venv(workspace, root, inst, budget)
+    if note:
+        raise ToolError(f"the project's environment is being rebuilt: {note}")
+    done, wheel = build_wheel(root, project_env(workspace, inst.id), scratch_for(workspace, inst.id) / "dist", budget.slice(BUILD_TIMEOUT))
+    check_workspace_sizes(root)
+    return BuildOutput(ok=bool(wheel), wheel=wheel, tail=scrub(done.tail, workspace, env=scratch_home(workspace)), seconds=done.seconds)
 
 
 @dataclass
@@ -166,13 +178,14 @@ def run_pytest(
     env: dict[str, str],
     inst: Instance,
     *,
+    python: Path,
     rundir: Path,
     rootdir: Path,
     targets: list[str],
     timeout: float,
     hidden_paths: tuple[Path, ...] = (),
 ) -> TestRun:
-    """Run pytest in the project's venv with the recorder plugin and the project's warning flags,
+    """Run pytest with the venv's ``python``, the recorder plugin and the project's warning flags,
     on ``targets`` relative to ``rootdir``; the project's own pytest configuration is ignored and
     ``src/`` is first on the path. ``rundir`` holds the plugin, the ini and the report."""
     # Resolved paths only: pytest names tests relative to the rootdir and a symlinked temp folder
@@ -186,7 +199,7 @@ def run_pytest(
         report.unlink()
     flags = ["-q", "-p", "no:cacheprovider", "--tb=short", "-rfE", "-o", "console_output_style=classic", *inst.warning_flags]
     command = [
-        str(venv_python(root)),
+        str(python),
         "-m",
         "pytest",
         *flags,
@@ -204,7 +217,7 @@ def run_pytest(
     result = TestRun(
         command="pytest " + " ".join([*flags, *targets]),
         exit_status=done.code,
-        tail=scrub(done.tail, root, *hidden_paths),
+        tail=scrub(done.tail, root, *hidden_paths, env=rundir.parent),
         seconds=done.seconds,
         timed_out=done.timed_out,
     )
@@ -238,23 +251,29 @@ def check_targets(root: Path, targets: list[str]) -> list[str]:
     return cleaned or ["tests"]
 
 
-def run_tests(given: TestsInput, workspace: Path) -> TestsOutput:
+def run_tests(given: TestsInput, workspace: Path, *, budget: Budget | None = None) -> TestsOutput:
     """The project's public tests, in its venv, with warnings as errors: a tail and counts."""
+    budget = budget or Budget()
     root, inst = ready_root(workspace, given.project.value)
     targets = check_targets(root, given.tests)
+    note = ensure_venv(workspace, root, inst, budget)
+    if note:
+        raise ToolError(f"the project's environment is being rebuilt: {note}")
     result = run_pytest(
         root,
-        project_env(root),
+        project_env(workspace, inst.id),
         inst,
-        rundir=root / JUDGE_DIR / "runs" / "public",
+        python=venv_python(workspace, inst.id),
+        rundir=scratch_for(workspace, inst.id) / "runs" / "public",
         rootdir=root,
         targets=targets,
-        timeout=TESTS_TIMEOUT,
+        timeout=budget.slice(TESTS_TIMEOUT),
     )
     outcomes = result.outcomes
     failed = [test for test, outcome in outcomes.items() if outcome == "failed"]
     errors = [test for test, outcome in outcomes.items() if outcome == "error"]
     errors += [f"{node} (collection)" for node in result.collection_errors]
+    check_workspace_sizes(root)
     return TestsOutput(
         command=result.command,
         exit_code=result.exit_status,

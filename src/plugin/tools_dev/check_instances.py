@@ -52,6 +52,10 @@ def prepare(root: Path, *, frozen: bool) -> dict[str, str]:
     return env
 
 
+def python_of(root: Path) -> Path:
+    return root / ".venv" / "bin" / "python"
+
+
 def pytest_in(root: Path, env: dict[str, str], inst: Instance, kind: str, tests_dir: Path):
     rundir = root / ".judge" / "runs" / kind
     if rundir.exists():
@@ -61,9 +65,9 @@ def pytest_in(root: Path, env: dict[str, str], inst: Instance, kind: str, tests_
         names = sorted(path.name for path in tests_dir.glob("test_hidden_*.py"))
         for name in names:
             shutil.copy(tests_dir / name, rundir / name)
-        return run_pytest(root, env, inst, rundir=rundir, rootdir=rundir, targets=names, timeout=120)
+        return run_pytest(root, env, inst, python=python_of(root), rundir=rundir, rootdir=rundir, targets=names, timeout=120)
     shutil.copytree(tests_dir, rundir / "tests", ignore=shutil.ignore_patterns("__pycache__"))
-    return run_pytest(root, env, inst, rundir=rundir, rootdir=rundir, targets=["tests"], timeout=120)
+    return run_pytest(root, env, inst, python=python_of(root), rundir=rundir, rootdir=rundir, targets=["tests"], timeout=120)
 
 
 def check(inst: Instance, scratch: Path, *, write_ids: bool) -> list[str]:
@@ -74,7 +78,7 @@ def check(inst: Instance, scratch: Path, *, write_ids: bool) -> list[str]:
     # A. pristine on the old version
     pristine = copy_project(inst, scratch / "pristine")
     env = prepare(pristine, frozen=True)
-    installed = installed_versions(pristine, [inst.dependency], env)[inst.dependency]
+    installed = installed_versions(python_of(pristine), [inst.dependency], env)[inst.dependency]
     if installed != inst.from_version:
         problems.append(f"A: pristine installs {inst.dependency} {installed}, not {inst.from_version}")
     public = pytest_in(pristine, env, plain(inst), "public", inst.project_dir / "tests")
@@ -90,7 +94,7 @@ def check(inst: Instance, scratch: Path, *, write_ids: bool) -> list[str]:
     solution_files = solution_tree(inst, scratch / "solution-tree")
     shutil.copy(solution_files / "pyproject.toml", bumped / "pyproject.toml")
     env_b = prepare(bumped, frozen=False)
-    installed_b = installed_versions(bumped, [inst.dependency], env_b)[inst.dependency]
+    installed_b = installed_versions(python_of(bumped), [inst.dependency], env_b)[inst.dependency]
     public_b = pytest_in(bumped, env_b, inst, "public", inst.project_dir / "tests")
     if public_b.ok:
         problems.append("B: the pristine code passes the public tests on the target (a version bump would do)")
@@ -100,7 +104,7 @@ def check(inst: Instance, scratch: Path, *, write_ids: bool) -> list[str]:
     solved = copy_project(inst, scratch / "solved")
     apply_patch(solved, inst.solution_patch)
     env_c = prepare(solved, frozen=False)
-    installed_c = installed_versions(solved, [inst.dependency], env_c)[inst.dependency]
+    installed_c = installed_versions(python_of(solved), [inst.dependency], env_c)[inst.dependency]
     if installed_c != inst.target_version:
         problems.append(f"C: the solution installs {inst.dependency} {installed_c}, not {inst.target_version}")
     locked = locked_versions((solved / "uv.lock").read_text(encoding="utf-8"))

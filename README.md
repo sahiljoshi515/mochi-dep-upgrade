@@ -12,13 +12,13 @@ public and hidden tests, without touching anything unrelated.
 | Tool | Does | Code |
 |---|---|---|
 | `pin_project` | The task's reference: the pristine project's tree hashes, its `[project]` dependencies and `requires-python`, every other direct dependency's locked version, the allowed additions and collateral, the forbidden patterns, the hidden tests' hash and ids, and the change limits | `src/plugin/project.py` |
-| `start_project` | Copies the project into `dep-upgrade/<project>/`, commits it (`git init`), creates `.venv` on the plugin's own Python and runs `uv sync --frozen`; resumable (`complete: false` means call again, progress in `.judge/progress.json`) and idempotent; returns the dependency facts, the source files that import the dependency (`uses_dependency`) and a compact layout (at most 40 entries) | `src/plugin/project.py` |
+| `start_project` | Copies the project into `dep-upgrade/<project>/`, commits it (`git init`), creates the project's venv on the plugin's own Python outside the workspace (see Limitations) and runs `uv sync --frozen`; resumable (`complete: false` means call again, progress in `.judge/progress.json`) and idempotent; returns the dependency facts, the source files that import the dependency (`uses_dependency`) and a compact layout (at most 40 entries) | `src/plugin/project.py` |
 | `list_files` | A recursive, sorted, paginated listing under a workspace path, skipping `.git`, `.venv`, `.judge` and caches | `src/plugin/files.py` |
 | `read_file` | Up to 200 lines and 8 KB of a UTF-8 file (`truncated` says to continue from the next line) | `src/plugin/files.py` |
 | `search` | A regular expression over the files matching a glob under a folder, up to 50 hits | `src/plugin/files.py` |
 | `write_file` | Writes 1 to 5 files in one call (60 KB in all), all or none: `pyproject.toml` (only its `[project]` dependencies array may differ from the pristine file) or `.py` files under `src/<package>/`; refuses `tests/`, `README.md`, `uv.lock`, `.judge/` and anything else; returns only each file's path and size | `src/plugin/files.py` |
 | `sync` | `uv lock` then `uv sync` into the project's venv, resumable across calls (`complete: false` means call again); a resolution or install failure comes back as `ok: false` with the log's tail | `src/plugin/build.py` |
-| `run_build` | `uv build --wheel` into `.judge/dist/` | `src/plugin/build.py` |
+| `run_build` | `uv build --wheel` into the scratch folder outside the workspace | `src/plugin/build.py` |
 | `run_tests` | The project's public tests in its venv, with the project's warning flags (deprecations as errors) and a JSON recorder; counts, failed ids and a 60-line tail | `src/plugin/build.py` |
 | `judge` | The trusted final look, in stages that resume across calls (`complete: false` means call again; stage results in `.judge/progress.json` under the hash of the tree they judged): `git status` against the pristine commit, `uv lock --check`, the installed version, the wheel, the pristine public tests restored from the plugin's copy, the hidden tests, a forbidden-pattern scan; when every stage is done it writes `.judge/judgement.json` (`complete: true`) and `.judge/diff.patch`; returns counts and the changed files, nothing about the hidden tests | `src/plugin/judge.py` |
 
@@ -160,6 +160,16 @@ From the NanoAgent repository root:
 - **Targets are fixed releases** (the latest when the plugin was built): the
   agent must lock exactly the pinned target, so a newer release on PyPI does
   not change the task.
+- **Nothing heavy in the workspace.** The host syncs the whole workspace back into the
+  member's agent folder and refuses files over 10 MB, so the project's venv (NumPy alone
+  carries a 25 MB OpenBLAS), its wheels, the test run folders and the subprocess HOME live
+  outside the workspace, under `<tmp>/nanoagent-dep-upgrade-<sha256 of the workspace path>/`
+  (the sandbox home under the macOS sandbox, `/tmp` on the hosted runner). The workspace holds
+  only the project tree, its `.git` and `.judge/` (the record files). A later process that finds
+  the scratch folder gone rebuilds the venv from `uv.lock` inside the next tool call's budget
+  (the call returns `complete: false` and asks to be called again when the rebuild does not
+  fit); scratch folders of other workspaces untouched for 12 hours are removed. No tool leaves a
+  file over 8 MB in the workspace: every writing tool checks and refuses with a clear error.
 - **Budgets.** Every tool call stays under 150 s and every output under about
   1 500 tokens (reads of 200 lines or 8 KB, 50 search hits, 60-line tails of
   200 characters); the projects' modules are at most ~110 lines so a rewritten

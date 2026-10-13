@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nanoagent-dep-upgrade"
-version = "0.1.0"
+version = "0.1.1"
 description = "Dependency Upgrade: a NanoAgent plugin"
 # The shipped projects pin old releases whose wheels exist for Python 3.12; their venvs are built
 # on this interpreter, so it stays a 3.12.

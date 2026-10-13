@@ -1,7 +1,9 @@
-"""The reference pin of a project, and setting a project up in the workspace (resumably)."""
+"""The reference pin of a project, the project's environment outside the workspace, and setting a
+project up in the workspace (resumably)."""
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 import shutil
@@ -17,12 +19,15 @@ from plugin.common import (
     TOOL_DIRS,
     Budget,
     ToolError,
+    check_workspace_sizes,
     clean_env,
     is_protected,
     load_progress,
     project_root,
+    prune_scratch,
     run,
     save_progress,
+    scratch_home,
     sha256_bytes,
     tree_entries,
     tree_hash,
@@ -33,9 +38,12 @@ from verifier.pyproject import blank_dependencies, dependencies, requires_python
 from verifier.versions import canonical_name, parse_requirement
 
 READY = "ready.json"
+INSTALLED_MARK = ".nanoagent-installed"
 GIT_EXCLUDE = "\n".join([".venv/", JUDGE_DIR + "/", "__pycache__/", "*.pyc", ".pytest_cache/", "dist/", "build/", "*.egg-info/", ""])
 MAX_LAYOUT = 40
 MAX_USES = 20
+VENV_TIMEOUT = 60.0
+INSTALL_TIMEOUT = 130.0
 # How a distribution is imported, when the name differs or the dash becomes an underscore.
 IMPORT_NAMES = {"pydantic-settings": "pydantic_settings", "sqlalchemy": "sqlalchemy", "markupsafe": "markupsafe"}
 
@@ -157,9 +165,66 @@ def ready_root(workspace: Path, project: str) -> tuple[Path, Instance]:
     return root, inst
 
 
-def installed_versions(root: Path, names: list[str], env: dict[str, str]) -> dict[str, str]:
-    """Each distribution's version installed in the project's venv, '' when it is missing."""
-    python = root / ".venv" / "bin" / "python"
+# ----- the project's environment, outside the workspace -----
+
+
+def scratch_for(workspace: Path, project: str) -> Path:
+    """The project's folder in the workspace's scratch home (venv, wheels, run folders)."""
+    folder = scratch_home(workspace) / project
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def venv_dir(workspace: Path, project: str) -> Path:
+    return scratch_for(workspace, project) / ".venv"
+
+
+def venv_python(workspace: Path, project: str) -> Path:
+    return venv_dir(workspace, project) / "bin" / "python"
+
+
+def project_env(workspace: Path, project: str, *, with_python: bool = True) -> dict[str, str]:
+    """The environment uv, git and Python run in for ``project``: HOME and TMPDIR in the scratch
+    home, the project environment pointed at the venv there."""
+    venv = venv_dir(workspace, project)
+    extra = {"UV_PROJECT_ENVIRONMENT": str(venv)}
+    if with_python and (venv / "bin" / "python").exists():
+        extra["UV_PYTHON"] = str(venv / "bin" / "python")
+    return clean_env(scratch_home(workspace) / "home", extra=extra)
+
+
+def ensure_venv(workspace: Path, root: Path, inst: Instance, budget: Budget) -> str | None:
+    """Make sure the project's venv exists outside the workspace with the workspace's lock
+    installed (a later process finds the scratch folder empty and rebuilds it). Returns None when
+    it is ready, or what to do when the budget ran out first."""
+    venv = venv_dir(workspace, inst.id)
+    mark = venv / INSTALLED_MARK
+    if mark.is_file():
+        return None
+    if not budget.allows(20):
+        return "call again to rebuild the project's environment"
+    if not (venv / "bin" / "python").exists():
+        if venv.exists():
+            shutil.rmtree(venv, ignore_errors=True)
+        made = run([uv(), "venv", "-q", "--python", sys.executable, str(venv)], cwd=root, env=project_env(workspace, inst.id, with_python=False), timeout=budget.slice(VENV_TIMEOUT))
+        if made.timed_out:
+            shutil.rmtree(venv, ignore_errors=True)
+            return "call again to continue rebuilding the project's environment"
+        if not made.ok:
+            raise ToolError("could not create the project's environment: " + " ".join(made.tail[-3:]))
+    if not budget.allows(15):
+        return "call again to install the project's environment"
+    synced = run([uv(), "sync", "--frozen"], cwd=root, env=project_env(workspace, inst.id), timeout=budget.slice(INSTALL_TIMEOUT))
+    if synced.timed_out:
+        return "call again to continue installing the project's environment"
+    if not synced.ok:
+        raise ToolError("could not install the project's locked environment: " + " | ".join(synced.tail[-6:]))
+    mark.write_text("installed from uv.lock\n", encoding="utf-8")
+    return None
+
+
+def installed_versions(python: Path, names: list[str], env: dict[str, str]) -> dict[str, str]:
+    """Each distribution's version installed in the venv at ``python``, '' when it is missing."""
     if not python.exists():
         return {name: "" for name in names}
     script = (
@@ -172,7 +237,7 @@ def installed_versions(root: Path, names: list[str], env: dict[str, str]) -> dic
         "        out[name] = ''\n"
         "print(json.dumps(out))\n"
     )
-    found = run([str(python), "-I", "-c", script, json.dumps(names)], cwd=root, env=env, timeout=30, tail=5)
+    found = run([str(python), "-I", "-c", script, json.dumps(names)], cwd=python.parent, env=env, timeout=30, tail=5)
     if not found.ok or not found.tail:
         return {name: "" for name in names}
     try:
@@ -222,18 +287,24 @@ def _start_output(root: Path, inst: Instance, *, complete: bool, next_step: str,
 
 
 def start_project(given: UpgradeInput, workspace: Path, *, budget: Budget | None = None) -> StartOutput:
-    """Copy the project into ``dep-upgrade/<project>/``, commit it, create its venv on this Python
-    and install its locked environment. Resumable: each stage is recorded in
+    """Copy the project into ``dep-upgrade/<project>/``, commit it, and create its venv outside the
+    workspace with the locked environment installed. Resumable: each stage is recorded in
     ``.judge/progress.json``; a call that runs out of budget returns ``complete: false`` and the
-    next call carries on. A finished project is returned as is."""
+    next call carries on. A finished project is returned as is (its environment rebuilt first when
+    a later process finds it missing)."""
     budget = budget or Budget()
     inst = load_instance(given.project.value)
     root = project_root(workspace, inst.id)
     judge_dir = root / JUDGE_DIR
     ready = judge_dir / READY
     if ready.is_file():
-        return build_output(json.loads(ready.read_text(encoding="utf-8")), StartOutput)
-    stage = load_progress(root).get("start", {}) if root.exists() else {}
+        output = build_output(json.loads(ready.read_text(encoding="utf-8")), StartOutput)
+        note = ensure_venv(workspace, root, inst, budget)
+        if note:
+            return dataclasses.replace(output, complete=False, next=note)
+        return output
+    progress = load_progress(root) if root.exists() else {}
+    stage = progress.get("start", {}) if isinstance(progress.get("start"), dict) else {}
     if not stage.get("copied"):
         if root.exists():
             shutil.rmtree(root)
@@ -241,16 +312,19 @@ def start_project(given: UpgradeInput, workspace: Path, *, budget: Budget | None
         shutil.copytree(inst.project_dir, root, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".pytest_cache", ".venv"))
         judge_dir.mkdir()
         stage = {"copied": True}
-        save_progress(root, {"start": stage})
-    env = clean_env(judge_dir / "home", extra={"UV_PROJECT_ENVIRONMENT": str(root / ".venv")})
+        progress = {"start": stage}
+        save_progress(root, progress)
+    progress["start"] = stage
+    progress["environment"] = f"outside the workspace, in {scratch_home(workspace).name}/{inst.id}/.venv (rebuilt from uv.lock when missing)"
 
     def pause(note: str) -> StartOutput:
-        save_progress(root, {"start": stage})
+        save_progress(root, progress)
         return _start_output(root, inst, complete=False, next_step=note, current="")
 
     if not stage.get("committed"):
         if (root / ".git").exists():
             shutil.rmtree(root / ".git")
+        env = project_env(workspace, inst.id, with_python=False)
         git = ["git", "-c", "user.name=nanoagent", "-c", "user.email=nanoagent@example.invalid", "-c", "commit.gpgsign=false"]
         for step in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "pristine project"]):
             done = run([*git, *step], cwd=root, env=env, timeout=30)
@@ -259,36 +333,19 @@ def start_project(given: UpgradeInput, workspace: Path, *, budget: Budget | None
         (root / ".git" / "info").mkdir(exist_ok=True)
         (root / ".git" / "info" / "exclude").write_text(GIT_EXCLUDE, encoding="utf-8")
         stage["committed"] = True
-        save_progress(root, {"start": stage})
+        save_progress(root, progress)
 
-    if not stage.get("venv"):
-        if not budget.allows(20):
-            return pause("call start_project again to create the project's environment")
-        venv = run([uv(), "venv", "-q", "--python", sys.executable, str(root / ".venv")], cwd=root, env=env, timeout=budget.slice(60))
-        if venv.timed_out:
-            return pause("call start_project again to continue creating the environment")
-        if not venv.ok:
-            raise ToolError("could not create the project's venv: " + " ".join(venv.tail[-3:]))
-        stage["venv"] = True
-        save_progress(root, {"start": stage})
+    note = ensure_venv(workspace, root, inst, budget)
+    if note:
+        return pause(note)
+    stage["installed"] = True
+    save_progress(root, progress)
 
-    if not stage.get("synced"):
-        if not budget.allows(20):
-            return pause("call start_project again to install the project's environment")
-        synced = run([uv(), "sync", "--frozen"], cwd=root, env=env, timeout=budget.slice(BUDGET_SYNC))
-        if synced.timed_out:
-            return pause("call start_project again to continue installing the project's environment")
-        if not synced.ok:
-            raise ToolError("could not install the project's locked environment: " + " | ".join(synced.tail[-6:]))
-        stage["synced"] = True
-        save_progress(root, {"start": stage})
-
-    current = installed_versions(root, [inst.dependency], env)[inst.dependency]
+    current = installed_versions(venv_python(workspace, inst.id), [inst.dependency], project_env(workspace, inst.id))[inst.dependency]
     if current != inst.from_version:
-        raise ToolError(f"the venv holds {inst.dependency} {current!r}, expected {inst.from_version}")
+        raise ToolError(f"the environment holds {inst.dependency} {current!r}, expected {inst.from_version}")
+    check_workspace_sizes(root)
     output = _start_output(root, inst, complete=True, next_step="", current=current)
     ready.write_text(json.dumps(plain_output(output), indent=1) + "\n", encoding="utf-8")
+    prune_scratch(scratch_home(workspace))
     return output
-
-
-BUDGET_SYNC = 130.0

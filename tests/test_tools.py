@@ -31,7 +31,10 @@ from plugin.common import (
     confine,
     is_protected,
     load_progress,
+    oversized,
+    prune_scratch,
     save_progress,
+    scratch_home,
     scrub,
     tree_entries,
     tree_hash,
@@ -289,3 +292,37 @@ def test_every_shipped_project_pins_and_reads_back(tmp_path: Path, inst):
     assert not any(str(PLUGIN_ROOT) in rule for rule in rules)
     public_tests = sorted((inst.project_dir / "tests").glob("test_*.py"))
     assert public_tests and (inst.project_dir / "README.md").is_file() and (inst.project_dir / "uv.lock").is_file()
+
+
+def test_scratch_home_is_outside_the_workspace_and_stable(tmp_path: Path):
+    import tempfile
+
+    home = scratch_home(tmp_path)
+    assert home == scratch_home(tmp_path) and home != scratch_home(tmp_path / "other")
+    assert not home.is_relative_to(tmp_path.resolve())
+    assert home.parent == Path(tempfile.gettempdir()).resolve()
+    assert home.name.startswith("nanoagent-dep-upgrade-") and len(home.name) == len("nanoagent-dep-upgrade-") + 64
+
+
+def test_oversized_and_prune(tmp_path: Path):
+    import os
+    import time
+
+    (tmp_path / "small.bin").write_bytes(b"x" * 1024)
+    with (tmp_path / "big.bin").open("wb") as handle:
+        handle.seek(8 * 1024 * 1024)
+        handle.write(b"\0")
+    assert oversized(tmp_path) == [("big.bin", 8 * 1024 * 1024 + 1)]
+    assert oversized(tmp_path, limit=9 * 1024 * 1024) == []
+    keep = tmp_path / "nanoagent-dep-upgrade-keep"
+    old = tmp_path / "nanoagent-dep-upgrade-old"
+    fresh = tmp_path / "nanoagent-dep-upgrade-fresh"
+    other = tmp_path / "unrelated-old"
+    for folder in (keep, old, fresh, other):
+        folder.mkdir()
+        (folder / "f").write_text("x")
+    stale = time.time() - 13 * 3600
+    os.utime(old, (stale, stale))
+    os.utime(other, (stale, stale))
+    assert prune_scratch(keep) == 1
+    assert keep.exists() and fresh.exists() and other.exists() and not old.exists()

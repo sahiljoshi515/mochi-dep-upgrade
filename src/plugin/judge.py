@@ -6,7 +6,8 @@ a pristine copy -> hidden tests -> forbidden-pattern scan. Each stage's result g
 returns ``complete: false`` and the next call carries on from the first stage not yet done. A
 tree that changed since resets every stage. When every stage is done the judge writes
 ``.judge/judgement.json`` (``complete: true``) with every hash the verifier cross-checks, and
-returns counts and the changed files, nothing about the hidden tests."""
+returns counts and the changed files, nothing about the hidden tests. Builds and test runs happen
+in the project's venv outside the workspace; the workspace gets only the record."""
 
 from __future__ import annotations
 
@@ -17,15 +18,17 @@ import time
 from pathlib import Path
 
 from contract import JudgeOutput, UpgradeInput
-from plugin.build import build_wheel, direct_names, project_env, run_pytest
+from plugin.build import build_wheel, direct_names, run_pytest
 from plugin.common import (
     JUDGE_DIR,
     TOOL_DIRS,
     Budget,
+    check_workspace_sizes,
     is_protected,
     load_progress,
     run,
     save_progress,
+    scratch_home,
     scrub,
     sha256_file,
     tree_entries,
@@ -33,7 +36,7 @@ from plugin.common import (
     uv,
 )
 from plugin.instances import Instance
-from plugin.project import installed_versions, ready_root
+from plugin.project import ensure_venv, installed_versions, project_env, ready_root, scratch_for, venv_python
 
 JUDGEMENT = "judgement.json"
 DIFF = "diff.patch"
@@ -117,22 +120,23 @@ def scan_forbidden(src: Path, patterns: tuple[str, ...]) -> list[str]:
     return violations
 
 
-def _test_stage(root: Path, env: dict[str, str], inst: Instance, kind: str, timeout: float) -> dict:
-    """Run the pristine public tests or the hidden tests in a fresh run folder; the hidden tests'
-    text never stays in the workspace."""
-    rundir = root / JUDGE_DIR / "runs" / f"judge-{kind}"
+def _test_stage(workspace: Path, root: Path, env: dict[str, str], inst: Instance, kind: str, timeout: float) -> dict:
+    """Run the pristine public tests or the hidden tests in a fresh run folder outside the
+    workspace; the hidden tests' text is removed again afterwards."""
+    rundir = scratch_for(workspace, inst.id) / "runs" / f"judge-{kind}"
     if rundir.exists():
         shutil.rmtree(rundir)
     rundir.mkdir(parents=True)
+    python = venv_python(workspace, inst.id)
     if kind == "public":
         shutil.copytree(inst.project_dir / "tests", rundir / "tests", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-        result = run_pytest(root, env, inst, rundir=rundir, rootdir=rundir, targets=["tests"], timeout=timeout)
+        result = run_pytest(root, env, inst, python=python, rundir=rundir, rootdir=rundir, targets=["tests"], timeout=timeout)
     else:
         names = sorted(path.name for path in inst.hidden_dir.glob("test_hidden_*.py"))
         for name in names:
             shutil.copy(inst.hidden_dir / name, rundir / name)
         try:
-            result = run_pytest(root, env, inst, rundir=rundir, rootdir=rundir, targets=names, timeout=timeout, hidden_paths=(inst.hidden_dir,))
+            result = run_pytest(root, env, inst, python=python, rundir=rundir, rootdir=rundir, targets=names, timeout=timeout, hidden_paths=(inst.hidden_dir,))
         finally:
             for name in names:
                 (rundir / name).unlink(missing_ok=True)
@@ -145,7 +149,7 @@ def judge(given: UpgradeInput, workspace: Path, *, budget: Budget | None = None)
     budget = budget or Budget()
     root, inst = ready_root(workspace, given.project.value)
     judge_dir = root / JUDGE_DIR
-    env = project_env(root)
+    env = project_env(workspace, inst.id)
 
     tree_now = tree_hash(tree_entries(root))
     progress = load_progress(root)
@@ -184,28 +188,32 @@ def judge(given: UpgradeInput, workspace: Path, *, budget: Budget | None = None)
     if "diff" not in stages:
         stages["diff"] = {"changed_files": changed_files(root, env)}
         persist()
+    note = ensure_venv(workspace, root, inst, budget)
+    if note:
+        return pause(f"call judge again to continue: the project's environment is being rebuilt ({note})")
+    env = project_env(workspace, inst.id)
     if "lock_check" not in stages:
         if not budget.allows(15):
             return pause("call judge again to continue: lock check, build and tests are left")
         lock = run([uv(), "lock", "--check"], cwd=root, env=env, timeout=budget.slice(LOCK_TIMEOUT))
         if lock.timed_out:
             return pause("call judge again to continue: the lock check did not finish")
-        stages["lock_check"] = {"ok": lock.ok, "tail": scrub(lock.tail, workspace)}
-        stages["installed"] = installed_versions(root, direct_names(root, inst), env)
+        stages["lock_check"] = {"ok": lock.ok, "tail": scrub(lock.tail, workspace, env=scratch_home(workspace))}
+        stages["installed"] = installed_versions(venv_python(workspace, inst.id), direct_names(root, inst), env)
         persist()
     if "build" not in stages:
         if not budget.allows(20):
             return pause("call judge again to continue: build and tests are left")
-        built, wheel = build_wheel(root, env, judge_dir / "dist", budget.slice(BUILD_TIMEOUT))
+        built, wheel = build_wheel(root, env, scratch_for(workspace, inst.id) / "dist", budget.slice(BUILD_TIMEOUT))
         if built.timed_out:
             return pause("call judge again to continue: the build did not finish")
-        stages["build"] = {"ok": bool(wheel), "wheel": wheel, "tail": scrub(built.tail, workspace), "seconds": built.seconds}
+        stages["build"] = {"ok": bool(wheel), "wheel": wheel, "tail": scrub(built.tail, workspace, env=scratch_home(workspace)), "seconds": built.seconds}
         persist()
     for kind in ("public", "hidden"):
         if kind not in stages:
             if not budget.allows(20):
                 return pause(f"call judge again to continue: the {kind} tests are left")
-            record = _test_stage(root, env, inst, kind, budget.slice(TESTS_TIMEOUT))
+            record = _test_stage(workspace, root, env, inst, kind, budget.slice(TESTS_TIMEOUT))
             if record["timed_out"]:
                 return pause(f"call judge again to continue: the {kind} tests did not finish")
             stages[kind] = record
@@ -247,6 +255,7 @@ def judge(given: UpgradeInput, workspace: Path, *, budget: Budget | None = None)
     (judge_dir / DIFF).write_text(diff_text(root, env, changed), encoding="utf-8")
     progress.pop("judge", None)
     save_progress(root, progress)
+    check_workspace_sizes(root)
     public_passed = sum(1 for outcome in public["outcomes"].values() if outcome == "passed")
     return JudgeOutput(
         recorded=True,
