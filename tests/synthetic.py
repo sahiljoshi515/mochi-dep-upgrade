@@ -1,210 +1,190 @@
-"""A synthetic upgraded project in a workspace, with a judgement the trusted judge would have
-written, and its pin: what verify_task reads. No uv, git or venv needed."""
+"""A small synthetic instance for offline tests: its own catalog (in a temp data folder the verifier
+and the tools are pointed at), its locks, its project files, a workspace set up as start_upgrade
+leaves it, and a judgement as judge records a correct upgrade. Each test then changes one thing."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
-from plugin.common import is_protected, sha256_bytes, tree_entries, tree_hash
-from verifier.pyproject import blank_dependencies
+from contract import InstanceId, PinOutput, PypiFile, UpgradeInput, UpgradeReportOutput
+from verifier import catalog
+from verifier.trees import tree_entries, tree_hash
 
-PROJECT = "invoicer-pydantic-2"
-PACKAGE = "invoicer"
-DEPENDENCY = "pydantic"
-FROM_VERSION = "1.10.13"
-TARGET = "2.14.1"
-HIDDEN_IDS = ["test_hidden_api.py::test_dump", "test_hidden_api.py::test_errors"]
-FORBIDDEN = [
-    r"pydantic\.v1",
-    r"warnings\.(filterwarnings|simplefilter)",
-    r"sys\.modules\[",
-    r"^\s*pydantic(\.\w+)+\s*=[^=]",
-    r"\b(import|from)\s+_?pytest\b",
-]
-
-PYPROJECT = """[build-system]
-requires = ["hatchling>=1.25"]
-build-backend = "hatchling.build"
-
-[project]
-name = "invoicer"
-version = "1.4.0"
-requires-python = ">=3.12"
-dependencies = [
-    {deps}
-]
-
-[dependency-groups]
-dev = [
-    "pytest>=8",
-]
-"""
-PRISTINE_DEPS = '"pydantic>=1.10.13,<2",'
-UPGRADED_DEPS = '"pydantic==2.14.1",\n    "pydantic-settings>=2.10",'
-
-LOCK = """version = 1
-requires-python = ">=3.12"
-
-[[package]]
-name = "invoicer"
-version = "1.4.0"
-source = {{ editable = "." }}
-
-[[package]]
-name = "pydantic"
-version = "{pydantic}"
-source = {{ {pydantic_source} }}
-
-[[package]]
-name = "pytest"
-version = "{pytest}"
-source = {{ registry = "https://pypi.org/simple" }}
-{extra}"""
-PYPI = 'registry = "https://pypi.org/simple"'
-SETTINGS_PACKAGE = """
-[[package]]
-name = "pydantic-settings"
-version = "2.15.0"
-source = { registry = "https://pypi.org/simple" }
-"""
-
-PRISTINE_MODELS = "from pydantic import BaseModel, Field\n\n\nclass Invoice(BaseModel):\n    number: str = Field(..., regex='^INV')\n"
-UPGRADED_MODELS = "from pydantic import BaseModel, Field\n\n\nclass Invoice(BaseModel):\n    number: str = Field(..., pattern='^INV')\n"
-TESTS = "from invoicer.models import Invoice\n\n\ndef test_number():\n    assert Invoice(number='INV-1').number == 'INV-1'\n"
-README = "# invoicer\n\nInvoices.\n"
+ID = "respx-httpx-0.28"  # an id the contract's enum knows; the synthetic catalog gives it other content
+DEP = "httpx"
+OLD, NEW = "0.27.2", "0.28.1"
+WHEEL_SHA = "a" * 64
+SDIST_SHA = "b" * 64
+FILES = {
+    "README.md": "# demo\n",
+    "setup.py": 'from setuptools import setup\n\nsetup(\n    name="demo",\n    install_requires=["httpx>=0.25.0,<0.28.0", "six"],\n)\n',
+    "demo/__init__.py": "from demo.core import answer\n",
+    "demo/core.py": "import httpx\n\n\ndef answer():\n    return httpx.Request('GET', 'https://x').method\n",
+    "tests/test_core.py": "from demo import answer\n\n\ndef test_answer():\n    assert answer() == 'GET'\n",
+}
+UPGRADED = {
+    "setup.py": FILES["setup.py"].replace('"httpx>=0.25.0,<0.28.0"', '"httpx>=0.25.0"'),
+    "demo/core.py": "import httpx\n\n\ndef answer():\n    request = httpx.Request('GET', 'https://x')\n    return request.method\n",
+}
 
 
-def pristine_files() -> dict[str, str]:
+def lock(version: str, *, extra: str = "") -> str:
+    return (
+        f"anyio==4.7.0 \\\n    --hash=sha256:{'1' * 64}\n"
+        f"httpx=={version} \\\n    --hash=sha256:{WHEEL_SHA if version == NEW else 'c' * 64} \\\n    --hash=sha256:{SDIST_SHA if version == NEW else 'd' * 64}\n"
+        f"six==1.16.0 \\\n    --hash=sha256:{'2' * 64}\n" + extra
+    )
+
+
+def entry(project: Path) -> dict:
+    files = dict(tree_entries(project))
     return {
-        "pyproject.toml": PYPROJECT.format(deps=PRISTINE_DEPS),
-        "uv.lock": LOCK.format(pydantic=FROM_VERSION, pydantic_source=PYPI, pytest="9.1.1", extra=""),
-        "README.md": README,
-        "tests/test_models.py": TESTS,
-        f"src/{PACKAGE}/__init__.py": "",
-        f"src/{PACKAGE}/models.py": PRISTINE_MODELS,
+        "id": ID,
+        "title": "demo: support httpx 0.28",
+        "repo": "example/demo",
+        "license": "MIT",
+        "base": {"commit": "0" * 40, "tree_sha256": tree_hash(files.items()), "files": len(files), "bytes": 1},
+        "upstream": {"commit": "1" * 40, "date": "2024-12-19T00:00:00Z", "message": "support httpx 0.28", "url": "https://github.com/example/demo/commit/" + "1" * 40},
+        "dependency": DEP,
+        "import_names": ["httpx"],
+        "from_version": OLD,
+        "target_version": NEW,
+        "resolution_date": "2024-12-20T00:00:00Z",
+        "python": "3.12",
+        "spec": {"kind": "setup_py", "file": "setup.py", "base_requirement": "httpx>=0.25.0,<0.28.0", "upstream_requirement": "httpx>=0.25.0", "must_exclude_old": False},
+        "source_globs": ["demo/**/*.py"],
+        "test_dirs": ["tests"],
+        "test_requirements": ["pytest"],
+        "pytest_args": [],
+        "path_entries": ["."],
+        "env": {},
+        "allowed_collateral": [],
+        "allowed_new": [],
+        "locks": {
+            "base": "locks/demo.base.txt",
+            "base_sha256": hashlib.sha256(lock(OLD).encode()).hexdigest(),
+            "gold": "locks/demo.gold.txt",
+            "gold_sha256": hashlib.sha256(lock(NEW).encode()).hexdigest(),
+        },
+        "target_files": [{"filename": "httpx-0.28.1-py3-none-any.whl", "sha256": WHEEL_SHA}, {"filename": "httpx-0.28.1.tar.gz", "sha256": SDIST_SHA}],
+        "public": {"ids": ["tests/test_core.py::test_answer"], "excluded": []},
+        "hidden": {"commit": "1" * 40, "files": {"tests/test_core.py": hashlib.sha256(FILES["tests/test_core.py"].encode()).hexdigest()}, "targets": ["tests/test_core.py"], "ids": ["tests/test_core.py::test_answer"]},
+        "breaking": [{"test": "tests/test_core.py::test_answer", "error": "AttributeError"}],
+        "limits": {"max_changed_files": 5, "max_new_files": 2, "max_added_lines": 150},
+        "forbidden": [r"\bwarnings\.(?:filterwarnings|simplefilter|catch_warnings|resetwarnings)\b", r"\bsys\.argv\b"],
+        "gold": {"files": ["demo/core.py", "setup.py"], "added_lines": 3},
+        "fit": "hosted",
+        "timings": {},
+        "validated": {"platforms": ["test"], "at": "2026-10-16T00:00:00Z"},
+        "notes": "",
     }
 
 
-def upgraded_files() -> dict[str, str]:
-    files = pristine_files()
-    files["pyproject.toml"] = PYPROJECT.format(deps=UPGRADED_DEPS)
-    files["uv.lock"] = LOCK.format(pydantic=TARGET, pydantic_source=PYPI, pytest="9.1.1", extra=SETTINGS_PACKAGE)
-    files[f"src/{PACKAGE}/models.py"] = UPGRADED_MODELS
-    files[f"src/{PACKAGE}/settings.py"] = "from pydantic_settings import BaseSettings\n\n\nclass Settings(BaseSettings):\n    tax: float = 0.1\n"
-    return files
+def install_catalog(data: Path, project: Path) -> dict:
+    """Write the synthetic catalog and locks under ``data`` and point the verifier at them."""
+    item = entry(project)
+    (data / "locks").mkdir(parents=True, exist_ok=True)
+    (data / "locks" / "demo.base.txt").write_text(lock(OLD), encoding="utf-8")
+    (data / "locks" / "demo.gold.txt").write_text(lock(NEW), encoding="utf-8")
+    (data / "catalog.json").write_text(json.dumps({"version": 1, "instances": [item]}), encoding="utf-8")
+    catalog.DATA = data
+    catalog.CATALOG = data / "catalog.json"
+    catalog.load.cache_clear()
+    return item
 
 
-def write_tree(root: Path, files: dict[str, str]) -> None:
+def write_project(root: Path, files: dict[str, str]) -> None:
     for rel, text in files.items():
         path = root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
 
 
-def pin_for(tmp_path: Path, *, hidden_ids=None, forbidden=None, **overrides) -> dict:
-    """The pin_project output for the pristine synthetic project, as a plain dict."""
-    pristine = tmp_path / "pristine"
-    if not pristine.exists():
-        write_tree(pristine, pristine_files())
-    entries = tree_entries(pristine)
-    pyproject = pristine_files()["pyproject.toml"]
-    pin = {
-        "project": PROJECT,
-        "dependency": DEPENDENCY,
-        "package": PACKAGE,
-        "from_spec": "pydantic>=1.10.13,<2",
-        "from_version": FROM_VERSION,
-        "target_version": TARGET,
-        "requires_python": ">=3.12",
-        "pristine_tree_sha256": tree_hash(entries),
-        "protected_tree_sha256": tree_hash(entry for entry in entries if is_protected(entry[0])),
-        "pyproject_sha256": sha256_bytes(pyproject.encode()),
-        "pyproject_rest_sha256": sha256_bytes(blank_dependencies(pyproject).encode()),
-        "pristine_dependencies": ["pydantic>=1.10.13,<2"],
-        "other_dependencies": {"pytest": "9.1.1"},
-        "allowed_new_dependencies": ["pydantic-settings"],
-        "allowed_collateral": [],
-        "forbidden_patterns": FORBIDDEN if forbidden is None else forbidden,
-        "hidden_tests_sha256": "a" * 64,
-        "hidden_test_ids": HIDDEN_IDS if hidden_ids is None else hidden_ids,
-        "max_new_files": 5,
-        "max_added_lines": 600,
-    }
-    pin.update(overrides)
-    return pin
+def started_workspace(workspace: Path, item: dict, *, run: str = "test-run", token: str = "token-1", files: dict[str, str] | None = None) -> Path:
+    """The workspace as start_upgrade leaves it: the project, its pristine record and copies, the
+    pre-upgrade lock and the ready record."""
+    root = workspace / "dep-upgrade" / ID
+    write_project(root, FILES if files is None else files)
+    judge_dir = root / ".judge"
+    files = dict(tree_entries(root))
+    (judge_dir / "pristine").mkdir(parents=True, exist_ok=True)
+    (judge_dir / "pristine.json").write_text(json.dumps({"instance": ID, "tree_sha256": tree_hash(files.items()), "files": files}), encoding="utf-8")
+    for rel in ("setup.py", "demo/__init__.py", "demo/core.py"):
+        copy = judge_dir / "pristine" / rel
+        copy.parent.mkdir(parents=True, exist_ok=True)
+        copy.write_bytes((root / rel).read_bytes())
+    (judge_dir / "requirements.lock").write_text(lock(OLD), encoding="utf-8")
+    (judge_dir / "ready.json").write_text(json.dumps({"run": run, "setup_token": token, "output": {}}), encoding="utf-8")
+    return root
 
 
-def record_of(ids, *, failed=(), exit_status=None, collection_errors=None) -> dict:
-    outcomes = {test: ("failed" if test in failed else "passed") for test in ids}
-    status = (1 if failed or collection_errors else 0) if exit_status is None else exit_status
-    return {
-        "ok": status == 0 and not failed and not collection_errors,
-        "command": "pytest",
-        "exit_status": status,
-        "collected": list(ids),
-        "outcomes": outcomes,
-        "messages": {test: "AssertionError" for test in failed},
-        "collection_errors": dict(collection_errors or {}),
-        "tail": [],
-        "seconds": 0.5,
-    }
+def judged(root: Path, item: dict, *, token: str = "token-1", **override) -> dict:
+    """Write the judgement judge records for the tree as it stands (the upgrade done right) and the
+    judged lock; ``override`` replaces top-level fields."""
+    from verifier.shims import added_lines_by_file, pristine_manifest
+    from verifier.trees import changes
 
-
-def judge_workspace(root: Path, pin: dict, *, changed_override=None, **overrides) -> dict:
-    """What the judge writes for the project at ``root`` when every outcome is good; the judgement
-    is derived from the files as the judge derives it, so a mutated tree gets a consistent record
-    unless a test overrides a field."""
-    pristine = pristine_files()
+    manifest = pristine_manifest(root)
     entries = tree_entries(root)
-    current = dict(entries)
-    changed = []
-    for rel in sorted(set(current) | set(pristine)):
-        if rel in pristine and rel in current:
-            if sha256_bytes(pristine[rel].encode()) != current[rel]:
-                added = max(0, len((root / rel).read_text().splitlines()) - len(pristine[rel].splitlines()))
-                changed.append({"path": rel, "status": "modified", "sha256": current[rel], "added_lines": added})
-        elif rel in current:
-            changed.append({"path": rel, "status": "added", "sha256": current[rel], "added_lines": len((root / rel).read_text().splitlines())})
-        else:
-            changed.append({"path": rel, "status": "deleted", "sha256": "", "added_lines": 0})
+    changed = changes(manifest["files"], entries)
+    added = added_lines_by_file(root, changed)
+    text = lock(NEW)
+    (root / ".judge" / "requirements.lock").write_text(text, encoding="utf-8")
     judgement = {
-        "version": 1,
+        "version": 2,
         "complete": True,
-        "project": PROJECT,
-        "dependency": DEPENDENCY,
-        "target_version": TARGET,
-        "package": PACKAGE,
-        "pristine_tree_sha256": pin["pristine_tree_sha256"],
-        "hidden_tests_sha256": pin["hidden_tests_sha256"],
-        "protected_tree_sha256": tree_hash(entry for entry in entries if is_protected(entry[0])),
+        "instance": ID,
+        "catalog_sha256": catalog.entry_sha256(item),
+        "setup_token": token,
+        "base_tree_sha256": item["base"]["tree_sha256"],
+        "target_version": NEW,
         "tree_sha256": tree_hash(entries),
         "tree_stable": True,
-        "pyproject_sha256": current.get("pyproject.toml", ""),
-        "uv_lock_sha256": current.get("uv.lock", ""),
-        "changed_files": changed if changed_override is None else changed_override,
-        "installed": {DEPENDENCY: TARGET, "pytest": "9.1.1"},
-        "lock_check": {"ok": True, "tail": []},
-        "build": {"ok": True, "wheel": "invoicer-1.4.0-py3-none-any.whl", "tail": [], "seconds": 2.0},
-        "public": record_of(["tests/test_models.py::test_number"]),
-        "hidden": record_of(pin["hidden_test_ids"]),
+        "changed_files": [{**change, "added_lines": len(added.get(change["path"], []))} for change in changed],
+        "spec": {"ok": True, "requirements": ["httpx>=0.25.0", "six"], "requirement": "httpx>=0.25.0"},
+        "lock": {"ok": True, "sha256": hashlib.sha256(text.encode()).hexdigest(), "dependency_version": NEW},
+        "install": {"ok": True, "installed": {"httpx": NEW, "anyio": "4.7.0", "six": "1.16.0"}, "pip_check": {"ok": True, "tail": []}},
+        "build": {"ok": True, "wheel": "demo-1.0-py3-none-any.whl", "requires_dist": ["httpx>=0.25.0", "six"], "seconds": 1.0, "tail": []},
+        "public": {"ran": True, "ok": True, "ids_sha256": catalog.ids_sha256(item["public"]["ids"]), "passed": 1, "failed": [], "failed_count": 0, "missing": [], "missing_count": 0},
+        "hidden": {"ran": True, "ok": True, "ids_sha256": catalog.ids_sha256(item["hidden"]["ids"]), "passed": 1, "failed": [], "failed_count": 0, "missing": [], "missing_count": 0, "files_digest": catalog.hidden_digest(item["hidden"]["files"])},
         "forbidden": [],
-        "seconds": 10.0,
+        "seconds": 1.0,
+        "judged_at": "2026-10-16T00:00:00Z",
     }
-    judgement.update(overrides)
+    judgement.update(override)
+    (root / ".judge" / "judgement.json").write_text(json.dumps(judgement, indent=1, sort_keys=True), encoding="utf-8")
     return judgement
 
 
-def write_judgement(root: Path, judgement: dict) -> None:
-    (root / ".judge").mkdir(exist_ok=True)
-    (root / ".judge" / "judgement.json").write_text(json.dumps(judgement, indent=1), encoding="utf-8")
+def pin(item: dict, *, prior: str = "", files: list[tuple[str, str]] | None = None) -> PinOutput:
+    served = files if files is not None else [(f["filename"], f["sha256"]) for f in item["target_files"]]
+    return PinOutput(
+        instance=InstanceId(ID),
+        catalog_sha256=catalog.entry_sha256(item),
+        dependency=DEP,
+        from_version=OLD,
+        target_version=NEW,
+        pypi_files=[PypiFile(filename=name, sha256=sha) for name, sha in served],
+        pypi_yanked=False,
+        prior_judgement_sha256=prior,
+    )
 
 
-def gold_workspace(tmp_path: Path) -> tuple[Path, Path, dict]:
-    """``(workspace, project root, pin)`` for a finished, correct upgrade."""
-    workspace = tmp_path / "workspace"
-    root = workspace / "dep-upgrade" / PROJECT
-    write_tree(root, upgraded_files())
-    pin = pin_for(tmp_path)
-    write_judgement(root, judge_workspace(root, pin))
-    return workspace, root, pin
+def submission(**override) -> UpgradeReportOutput:
+    values = {
+        "instance": InstanceId(ID),
+        "dependency": DEP,
+        "from_version": OLD,
+        "to_version": NEW,
+        "requirement": "httpx>=0.25.0",
+        "changed_files": ["demo/core.py", "setup.py"],
+        "migration": ["Raised httpx to admit 0.28.1 in setup.py", "Read the request's method through a local in demo/core.py"],
+    }
+    values.update(override)
+    return UpgradeReportOutput(**values)
+
+
+def arguments() -> UpgradeInput:
+    return UpgradeInput(instance=InstanceId(ID))

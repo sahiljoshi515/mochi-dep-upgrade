@@ -1,176 +1,214 @@
 # Dependency Upgrade
 
-A `nanoagent.plugin/v1` plugin, created by `nanoagent plugin new` with the
-structure of NanoAgent's reference plugin, `plugins/arxiv-source`. Its task,
-`upgrade-dependency`, gives an agent a small, realistic Python project pinned
-to an old major of a real library and asks it to raise that one dependency to
-a target version and change the code so the project builds and passes its
-public and hidden tests, without touching anything unrelated.
+A `nanoagent.plugin/v1` plugin, created by `nanoagent plugin new` with the template's checks kept.
+
+Redo a real open-source project's upgrade of one dependency to its new major version. Each instance is
+a commit in which upstream itself upgraded the dependency and changed its code. The agent gets the
+repository at the commit before, with the old version installed, and must raise the requirement and
+migrate the code so that:
+- the project locks and installs exactly the target release, with the files PyPI serves for it;
+- its wheel builds;
+- the repository's own tests pass;
+- upstream's post-upgrade tests (hidden) pass;
+- nothing unrelated changes.
+
+A deterministic verifier (no model) checks 19 constraints and says which failed and why.
 
 ## Tools
 
-| Tool | Does | Code |
+- `pin_upgrade`: the task's reference. It reads the instance's catalog entry and, from PyPI, the files
+  of the target release, which must still be the ones the instance was validated with. It also notes
+  any judgement already in the workspace, so a run must judge afresh.
+- `start_upgrade`: checks the repository out under `dep-upgrade/<instance>/` at the commit before
+  upstream's upgrade. The tree comes from GitHub's codeload and must match the validated tree hash.
+  It records the pristine tree and installs the pre-upgrade lock in a venv outside the workspace. It
+  returns:
+  - the dependency, its current and target versions, the spec file and its requirement;
+  - the editable globs and where the source imports the dependency;
+  - the public tests that break on the new version, with their first error;
+  - the tests that are not judged;
+  - whether the instance fits a hosted run;
+  - the rules.
+- `list_files`, `read_file`, `search`: bounded reads of the workspace, never inside `.judge/`.
+- `edit_file`: exact replacements (each `old` must occur once), all or none, only in the spec file's
+  requirements and in source files under the editable globs. With `then: sync_and_test` it re-locks,
+  installs and runs the public tests in the same call.
+- `write_file`: whole files (new modules), with the same rules and the same `then`.
+- `sync`: re-locks the spec as it stands, as of the instance's resolution date, with every other
+  package held at its pre-upgrade version by constraints. It then installs exactly that lock (hashes
+  required, wheels only).
+- `run_tests`: the repository's tests on the agent's code, in a scratch copy. Failures among tests that
+  are not judged are only counted.
+- `judge`: the trusted final look, in stages that resume across calls: diff, lock, install
+  (`uv pip check`), build (the wheel and the requirement it declares), public tests (failures rerun
+  once), hidden tests (upstream's post-upgrade test files from GitHub, sha256-checked) and a shim scan
+  of the added lines. It writes `.judge/judgement.json`.
+
+### Tasks
+
+- `upgrade-dependency` (agent).
+  - Tools: `start_upgrade`, `list_files`, `read_file`, `search`, `edit_file`, `write_file`, `sync`,
+    `run_tests` and `judge`. Reference: `pin_upgrade`.
+  - It ends with `submit` of an `UpgradeReportOutput`: the instance, dependency, from and to versions,
+    the requirement as the spec now states it, the changed files and 1 to 8 migration notes.
+
+### The instances
+
+Every instance is a real commit, validated by the build-time oracle below. The table is generated from
+`src/plugin/data/catalog.json` by `python -m plugin.tools_dev.readme`.
+
+<!-- instances -->
+| Instance | Repository (licence) | Upgrade | Judged tests: public / hidden | Upstream's change | Fit |
+|---|---|---|---|---|---|
+| `pydantic-yaml-pydantic-2` | [NowanIlfideme/pydantic-yaml](https://github.com/NowanIlfideme/pydantic-yaml) (MIT) | pydantic 1.10.11 → 2.0.3 (Python 3.11) | 21 (4 excluded) / 11 | [c3ad43ea76](https://github.com/NowanIlfideme/pydantic-yaml/commit/c3ad43ea76294a27da61dc88e418e8785dfdad53): 8 files, +346 lines | local |
+| `respx-httpx-0.28` | [lundberg/respx](https://github.com/lundberg/respx) (BSD-3-Clause) | httpx 0.27.2 → 0.28.1 (Python 3.12) | 313 (8 excluded) / 123 | [179c65131b](https://github.com/lundberg/respx/commit/179c65131b16e895e9da0e2d629aab3db6a97694): 2 files, +7 lines | local |
+<!-- /instances -->
+
+### The task, step by step
+
+1. `start_upgrade` with the instance (again while `complete` is false).
+2. Read what the breaking errors point at.
+3. One `edit_file` with `then: sync_and_test`: raise the requirement so it admits the target, and
+   migrate the source with exact replacements.
+4. A fix-up `edit_file` if the sync failed or judged tests still fail.
+5. `judge` and `submit` in the same step.
+
+This fits the hosted runner's 6 steps when the instance is tagged `hosted` (set-up and judging measured
+short enough). `local` instances need a runner whose tool calls may take minutes.
+
+### The verdict: 19 constraints
+
+The verifier recomputes everything it can itself: the pristine record against the catalog's tree hash,
+every changed file and added line, the spec's requirements (its own reader), the lock's pins and hashes,
+and the shim scan. It takes only what needs execution (install, build, tests) from the judge's record,
+after showing that record is this run's, for this instance, with nothing changed since.
+
+| # | Id | Holds when |
 |---|---|---|
-| `pin_project` | The task's reference: the pristine project's tree hashes, its `[project]` dependencies and `requires-python`, every other direct dependency's locked version, the allowed additions and collateral, the forbidden patterns, the hidden tests' hash and ids, and the change limits | `src/plugin/project.py` |
-| `start_project` | Copies the project into `dep-upgrade/<project>/`, commits it (`git init`), creates the project's venv on the plugin's own Python outside the workspace (see Limitations) and runs `uv sync --frozen`; resumable (`complete: false` means call again, progress in `.judge/progress.json`) and idempotent; returns the dependency facts, the source files that import the dependency (`uses_dependency`) and a compact layout (at most 40 entries) | `src/plugin/project.py` |
-| `list_files` | A recursive, sorted, paginated listing under a workspace path, skipping `.git`, `.venv`, `.judge` and caches | `src/plugin/files.py` |
-| `read_file` | Up to 200 lines and 8 KB of a UTF-8 file (`truncated` says to continue from the next line) | `src/plugin/files.py` |
-| `search` | A regular expression over the files matching a glob under a folder, up to 50 hits | `src/plugin/files.py` |
-| `write_file` | Writes 1 to 5 files in one call (60 KB in all), all or none: `pyproject.toml` (only its `[project]` dependencies array may differ from the pristine file) or `.py` files under `src/<package>/`; refuses `tests/`, `README.md`, `uv.lock`, `.judge/` and anything else; returns only each file's path and size | `src/plugin/files.py` |
-| `sync` | `uv lock` then `uv sync` into the project's venv, resumable across calls (`complete: false` means call again); a resolution or install failure comes back as `ok: false` with the log's tail | `src/plugin/build.py` |
-| `run_build` | `uv build --wheel` into the scratch folder outside the workspace | `src/plugin/build.py` |
-| `run_tests` | The project's public tests in its venv, with the project's warning flags (deprecations as errors) and a JSON recorder; counts, failed ids and a 60-line tail | `src/plugin/build.py` |
-| `judge` | The trusted final look, in stages that resume across calls (`complete: false` means call again; stage results in `.judge/progress.json` under the hash of the tree they judged): `git status` against the pristine commit, `uv lock --check`, the installed version, the wheel, the pristine public tests restored from the plugin's copy, the hidden tests, a forbidden-pattern scan; when every stage is done it writes `.judge/judgement.json` (`complete: true`) and `.judge/diff.patch`; returns counts and the changed files, nothing about the hidden tests | `src/plugin/judge.py` |
+| 1 | `instance_pinned` | PyPI still serves the target release's files with the validated sha256, not yanked |
+| 2 | `submitted_facts` | The submission names this instance, the dependency, and both versions |
+| 3 | `migration_notes` | 1 to 8 notes of 10 to 200 characters |
+| 4 | `judged` | A complete judgement for this instance exists |
+| 5 | `judged_this_run` | It was made in this run (not the judgement found when the task started) and after this set-up (its token) |
+| 6 | `judgement_consistent` | It used this catalog entry, the validated pristine tree and the validated hidden tests |
+| 7 | `files_as_judged` | Nothing changed after (or while) judging |
+| 8 | `submission_matches` | The submitted changed files and requirement are the real ones |
+| 9 | `allowed_files_only` | Only the spec file and source under the editable globs changed; nothing was deleted |
+| 10 | `within_limits` | Changed files, new files and added lines within the instance's limits (from upstream's own change) |
+| 11 | `spec_scope` | The spec changed only the dependency's requirement (and what the upgrade moves with it); no URLs; the rest of the file unchanged |
+| 12 | `spec_admits_target` | The requirement admits the target (and excludes the old version when upstream's did) |
+| 13 | `lock_target` | The judged lock pins exactly the target, with hashes PyPI serves for it, and is unchanged since judging |
+| 14 | `lock_scope` | Every other package in the lock is where the validated post-upgrade lock puts it |
+| 15 | `installed_target` | The judged environment has the target installed and `uv pip check` is clean |
+| 16 | `builds` | The wheel builds, and its requirement on the dependency admits the target |
+| 17 | `public_tests_pass` | Every judged test of the repository passes |
+| 18 | `hidden_tests_pass` | Every one of upstream's post-upgrade tests passes |
+| 19 | `no_shims` | No shim in the added lines (warning filters, `sys.modules`, reloads, test or version sniffing, monkeypatching the library, `pydantic.v1`) |
 
-### The projects
+How the verdict is scored:
+- **Valid** only when all 19 hold. The message then says so.
+- **Score** is the share that held, at most 0.99 unless valid.
+- **Message** names the first failure, e.g. "The requirement httpx==0.27.2 does not admit 0.28.1" or
+  "Shim at respx/mocks.py:2: …".
+- **Not checked.** A constraint that needs a missing judgement is marked not checked.
+- **Details** carry every constraint (`{id, constraint, ok, expected, actual, message}`), the changed
+  files, the diff, failing tests and the provenance. The page draws them as a checklist.
 
-Each project under `src/plugin/instances/<project>/` is a src-layout package of
-5 to 8 modules with a README, a `pyproject.toml` whose `[project]`
-dependencies pin the old major, a `pytest` dev group, a committed `uv.lock`
-resolved for Python 3.12, and public `tests/`. The pristine code uses the
-APIs that the target version removed or deprecated, so it fails there until it
-is migrated; `hidden_tests/` exercise the new version's behaviour on code
-paths the public tests leave alone, and `solution.patch` is one migration that
-passes everything (used only by this plugin's own tests).
+### Where the ground truth comes from
 
-| Project | Dependency | From | To | What breaks |
-|---|---|---|---|---|
-| `invoicer-pydantic-2` | pydantic (+ `pydantic-settings` allowed) | `>=1.10.13,<2` | 2.14.1 | `regex=`, `const=`, `min_items=`, class `Config`, `@validator`/`@root_validator`, `BaseSettings`, `.dict/.json/.copy/parse_obj/parse_raw/schema`, `__fields__`, implicit `Optional` defaults, int-to-str coercion |
-| `ledger-sqlalchemy-2` | SQLAlchemy | `>=1.4.50,<1.5` | 2.1.4 | `MetaData(bind=)`, `engine.execute`, string SQL, `select([...])`, `case([...])`, `Query.get`, `Row["x"]`, `autoload=True`, `ext.declarative.declarative_base`, implicit commits |
-| `notes-flask-3` | Flask (+ Werkzeug and the other Pallets packages as collateral) | `>=2.2,<2.3` | 3.1.3 | `flask.json.JSONEncoder`, `app.json_encoder`, `JSON_SORT_KEYS`, `JSON_AS_ASCII`, `before_first_request`, `flask.escape`/`Markup`, `werkzeug.urls.url_quote`, `werkzeug.security.safe_join` |
-| `salesreport-pandas-3` | pandas (numpy may move) | `>=2.1,<2.2` | 3.0.6 | `delim_whitespace`, `infer_datetime_format`, `fillna(method=)`, `applymap`, `pd.value_counts`, `"M"` alias, `DataFrame.first`, grouping columns in `groupby.apply`, chained assignment and `inplace` under copy-on-write, `object` dtype checks under the `str` dtype |
-| `arrays-numpy-2` | NumPy | `>=1.26,<2` | 2.5.4 | `np.float_`, `np.NaN`, `np.product`, `np.alltrue`, `np.round_`, `np.cumproduct`, `np.asfarray`, `np.string_`/`np.unicode_`, `np.AxisError`, `np.array(copy=False)`, `np.in1d`, `np.trapz`, `np.row_stack`, 2-D `np.cross`, scalar `repr` |
+- **The repository.** GitHub's codeload, at the commit before the upgrade (base) and at upstream's
+  commit (C). Trees are checked against tree hashes recorded when the instance was validated.
+- **Versions and files.** PyPI's JSON API gives the target release and its files' sha256. The
+  reference reads it live.
+- **Locks.** `uv pip compile --universal --generate-hashes --only-binary :all: --exclude-newer <resolution
+  date>`. The pre-upgrade lock comes from the base spec (held below the new major when the spec
+  already admits it, as upstream's CI ran it). The validated post-upgrade lock comes from upstream's
+  spec. Sync reproduces the latter exactly for upstream's change.
+- **Tests.** Public tests are the repository's own at the base commit. Hidden tests are upstream's own
+  test files at C.
 
-`instance.json` names the dependency, its import name, the package, the old
-requirement and locked version, the target, the allowed new dependencies and
-collateral, the forbidden patterns (compatibility shims such as
-`pydantic.v1`, warning filters, monkeypatching, test sniffing), the warning
-flags the tests run with (`-W error::DeprecationWarning`, plus
-`FutureWarning` for pandas) and the hidden test ids.
-`src/plugin/tools_dev/check_instances.py` is the build-time oracle: the
-pristine project passes its public tests on the old version, pristine plus
-hidden tests fail, and the project with `solution.patch` passes public and
-hidden tests under the warning flags with exactly the target locked.
-`src/plugin/tools_dev/make_cases.py` turns each solution into a harness gold
-case under `tests/cases/`.
+### How an instance is validated (`python -m plugin.tools_dev.onboard`)
 
-### How the task is judged
+Every cell below runs twice:
 
-The reference, `pin_project`, runs first in a scratch workspace and is pinned.
-Every tool call is checked by the verifier's `verify_input`/`verify_output`,
-and `verify_task` reads the finished workspace:
+| Cell | Source | Tests | Environment |
+|---|---|---|---|
+| R1 | base | base | old |
+| R2 | base | base | new |
+| R3 | C | base | new |
+| R4 | base | C | old |
+| R5 | C | C | new |
+| R6 | base | C | new |
 
-1. `.judge/judgement.json` exists, is the project's, says `complete: true`,
-   and was judged against the pinned pristine project and hidden tests;
-   nothing changed while the judge ran or after it (whole-tree hash). A run
-   that ends without it gets "no judgement: call judge last".
-2. `tests/**` and `README.md` hash to the pin; `pyproject.toml` and `uv.lock`
-   hash to the judgement.
-3. Every changed file is `pyproject.toml`, `uv.lock` or a `.py` file under
-   `src/<package>/`, hashes to the judgement, and the new files and added
-   lines are within the limits (5 files, 600 lines).
-4. `pyproject.toml` differs from the pristine file only inside its `[project]`
-   dependencies array; `requires-python` is unchanged; the dependency is
-   required exactly once, unconditionally, with a specifier that admits the
-   target and rejects the old version; every other requirement is as written
-   (collateral excepted); additions come from the allowed list; no URL
-   requirements.
-5. `uv.lock` holds the dependency at exactly the target from PyPI, every other
-   direct dependency at its pinned version (collateral excepted), and no
-   package from outside PyPI.
-6. No forbidden pattern under `src/` (the judgement's scan and the verifier's
-   own).
-7. Then four outcomes score 0.25 each: `uv lock --check` passed and the
-   installed version is the target; the wheel built; the pristine public tests
-   passed; the hidden tests collected exactly the pinned ids and passed. The
-   verdict is valid only at 1.0.
-
-The verifier parses `pyproject.toml` and `uv.lock` with regular expressions
-(`verifier/pyproject.py`) and compares versions with a small PEP 440 reader
-(`verifier/versions.py`); the tools use the same modules, so the pin and the
-verdict read the files the same way.
+From those runs:
+- **Public tests** pass in R1 and R3, both times. At most 20% of the base tests may be excluded; the
+  rest are listed to the agent.
+- **Hidden tests** are tests in the files C changed that pass in R4 and R5, both times. Tests coupled
+  to upstream's own renames fail R4 and drop out. At least one is required.
+- **Breakage.** Some public test must fail in R2, or some hidden test in R6, so a bare version bump
+  cannot pass.
+- **Limits** come from upstream's own change (its source changes, and its spec's requirements).
+- **Shim patterns** that upstream's own added lines match are dropped.
+- **The gold case.** Upstream's change, replayed as `edit_file` replacements (`python -m
+  plugin.tools_dev.cases`), must be valid at 1.0.
 
 ## Layout
 
-```text
-.
-├── nanoagent.yaml   # manifest (a slimconfig ManifestConfig): id, runtime, permissions, tools, tasks
-├── contract.py      # each tool's and task's typed input and output: slimconfig Output classes
-├── README.md
-├── LICENSE
-├── pyproject.toml
-├── uv.lock
-├── .gitignore
-├── .env             # environment variable NAMEs this plugin needs (none here)
-├── run.sh           # exits 0 when this environment can run the plugin
-├── src/plugin/      # the MCP server (__main__.py), common.py, the tools, runners/, instances/, tools_dev/
-├── tests/           # unit tests, verifier tests, an end-to-end stdio test, harness cases under tests/cases/
-├── ui/              # the page: app.js, upgrade.js, app.css
-├── product/         # product.yaml and icon.svg
-└── verifier/        # deterministic verifier package, one module per tool, task.py for the task
 ```
-
-`contract.py` types every value: the server builds each call's input into its
-class and checks its output against its own, and NanoAgent and the verifier
-get the same classes. `verifier/` imports only the standard library and
-`contract`. Tool outputs never name the plugin's folder; a project's paths are
-reported relative to the workspace.
+contract.py               tools' and task's typed inputs and outputs
+nanoagent.yaml            the manifest: tools, the task, hosts
+src/plugin/
+  __main__.py             the MCP server
+  project.py              pin_upgrade, start_upgrade (codeload checkout, pristine record)
+  files.py                list_files, read_file, search, edit_file, write_file
+  sync.py                 sync, run_tests
+  judge.py                judge
+  envs.py                 locks (uv pip compile), venvs, installed versions
+  testing.py              pytest in a scratch copy, with the JSON recorder (runners/pytest_json.py)
+  spec.py, fetch.py, pythons.py, common.py
+  data/                   catalog.json, locks/<instance>.{base,gold}.txt, pythons.json
+  tools_dev/              onboard (the oracle), recipes.json, cases, readme, record_pythons
+verifier/                 the deterministic verifier: task.py (19 constraints), one module per tool
+                          group, and the readers the tools share (specs, locks, trees, shims, catalog)
+tests/                    offline unit tests, replay.py, and the scripted cases (tests/cases)
+ui/                       renderers.js and renderers.css: the result card
+product/                  product.yaml and icon.svg
+```
 
 ## Develop and run
 
 ```bash
 uv sync --extra dev
-uv run pytest                       # offline; NANOAGENT_NETWORK=1 adds the PyPI-backed tests
-uv run python -m plugin.tools_dev.check_instances   # the oracle, needs PyPI
+uv run pytest                                  # offline: specs, locks, trees, tools, the 19 constraints, the server
+NANOAGENT_NETWORK=1 uv run pytest              # also replays every case in tests/cases (GitHub and PyPI)
+uv run python tests/replay.py tests/cases/gold_respx-httpx-0.28.json
+uv run ruff check .
 ```
 
-From the NanoAgent repository root:
+The environments run on Python 3.11 or 3.12, depending on the instance. The interpreter comes from, in
+order:
+1. the plugin's own, when it matches;
+2. one `uv python find` knows;
+3. a sha256-pinned python-build-standalone build from releases.astral.sh (`data/pythons.json`).
 
-```bash
-.venv/bin/nanoagent plugin inspect plugins/dep-upgrade
-.venv/bin/python ~/mochi-dev/harness/scripted_task.py plugins/dep-upgrade tests/cases/gold_invoicer-pydantic-2.json
-```
+### Reproduce the checks
 
-## Limitations
+- **An instance, from its recipe:**
+  `uv run python -m plugin.tools_dev.onboard <instance> [--write]`. It runs the oracle, R1–R6, every
+  cell twice, and the evidence goes to `~/mochi-dev/runs/dep-upgrade/build/<instance>/oracle.json`.
+- **The cases:** `uv run python -m plugin.tools_dev.cases --adversarial respx-httpx-0.28`.
+- **Through NanoAgent's real task runner:** with a scripted agent instead of a model,
+  `python scripted_task.py <plugin> tests/cases/<case>.json --sandbox seatbelt`.
 
-- **No OS sandbox on Mochi's hosted runner.** There the plugin runs without a
-  sandbox around it: the code the agent writes and the tests that execute it
-  run with the plugin's own privileges. The hash-bound judgement and the
-  pinned protected-tree digest cover tampering with the project (tests,
-  README, lock, files changed during or after judging), but a test that
-  rewrote the plugin's own files (its instances, hidden tests or verifier)
-  could not be detected by the plugin itself. Sandboxed hosts (NanoAgent's
-  bubblewrap or seatbelt sandbox) make the plugin folder read-only and close
-  that gap.
-- **The hosted runner allows 6 steps, 2048 output tokens per completion and
-  $0.10 per run, and members cannot raise them.** A real upgrade needs more:
-  the shortest path is `start_project` → `read_file` → `write_file` → `sync`
-  → `judge`, with reads and fixes on top, and `start_project`, `sync` and
-  `judge` may each need a second call when they run out of their 150-second
-  budget on a cold cache. The task is meant for a runner with a higher step
-  limit: the member's own computer running Mochi Lab, or NanoAgent locally. A
-  run that stops before a complete `judge` gets the verdict "no judgement:
-  call judge last".
-- **Hidden tests are hidden from the tools, not from code the agent gets
-  executed.** The forbidden patterns (pytest and `_pytest` imports,
-  `sys.argv`, `atexit`, `os._exit`, `subprocess`, `ctypes`, the word `judge`,
-  warning filters, monkeypatching, `sys.modules`) raise the bar, the hidden
-  test files are deleted from the run folder after each run, and no output
-  names the plugin's folder; the residual risk is the one the plan accepts.
-- **Targets are fixed releases** (the latest when the plugin was built): the
-  agent must lock exactly the pinned target, so a newer release on PyPI does
-  not change the task.
-- **Nothing heavy in the workspace.** The host syncs the whole workspace back into the
-  member's agent folder and refuses files over 10 MB, so the project's venv (NumPy alone
-  carries a 25 MB OpenBLAS), its wheels, the test run folders and the subprocess HOME live
-  outside the workspace, under `<tmp>/nanoagent-dep-upgrade-<sha256 of the workspace path>/`
-  (the sandbox home under the macOS sandbox, `/tmp` on the hosted runner). The workspace holds
-  only the project tree, its `.git` and `.judge/` (the record files). A later process that finds
-  the scratch folder gone rebuilds the venv from `uv.lock` inside the next tool call's budget
-  (the call returns `complete: false` and asks to be called again when the rebuild does not
-  fit); scratch folders of other workspaces untouched for 12 hours are removed. No tool leaves a
-  file over 8 MB in the workspace: every writing tool checks and refuses with a clear error.
-- **Budgets.** Every tool call stays under 150 s and every output under about
-  1 500 tokens (reads of 200 lines or 8 KB, 50 search hits, 60-line tails of
-  200 characters); the projects' modules are at most ~110 lines so a rewritten
-  module fits in one completion.
+### Limitations
+
+- **Locks are plugin-owned.** `.judge/requirements.lock` is the plugin's own; the repositories ship no
+  lock file. A real project would commit its lock or its updated spec only.
+- **Pinned resolution dates.** Each instance's target is the newest release upstream's spec admits as
+  of its resolution date, not today's newest.
+- **Hosted fit.** Set-up and judging must fit a hosted run (180 s for everything, with the model's
+  steps). Instances tagged `local` need a runner whose tool calls may take minutes.
+- **Shims.** The shim scan is a regex scan of the added lines. It catches the common shims, not every
+  conceivable one; the hidden tests catch most partial migrations.
+- **Validated platforms.** Instances are validated on macOS (Apple silicon); a Linux x86-64 sample is
+  checked separately. Wheels-only locks may not install on other platforms.

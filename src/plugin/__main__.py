@@ -14,14 +14,14 @@ from slimconfig import build_output, output_schema, plain_output
 
 from contract import TOOLS, Tool
 from plugin import (
+    edit_file,
     judge,
     list_files,
-    pin_project,
+    pin_upgrade,
     read_file,
-    run_build,
     run_tests,
     search,
-    start_project,
+    start_upgrade,
     sync,
     write_file,
 )
@@ -31,14 +31,14 @@ server = Server("dep-upgrade")
 WORKSPACE_ENV = "NANOAGENT_WORKSPACE"
 # Each tool's implementation: (its input, the workspace) -> its output, as contract.TOOLS types them.
 IMPLEMENTATIONS = {
-    Tool.PIN_PROJECT: pin_project,
-    Tool.START_PROJECT: start_project,
+    Tool.PIN_UPGRADE: pin_upgrade,
+    Tool.START_UPGRADE: start_upgrade,
     Tool.LIST_FILES: list_files,
     Tool.READ_FILE: read_file,
     Tool.SEARCH: search,
+    Tool.EDIT_FILE: edit_file,
     Tool.WRITE_FILE: write_file,
     Tool.SYNC: sync,
-    Tool.RUN_BUILD: run_build,
     Tool.RUN_TESTS: run_tests,
     Tool.JUDGE: judge,
 }

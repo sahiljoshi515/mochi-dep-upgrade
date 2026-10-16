@@ -1,0 +1,145 @@
+{
+ "note": "Upstream's own change (https://github.com/NowanIlfideme/pydantic-yaml/commit/c3ad43ea76294a27da61dc88e418e8785dfdad53) as exact replacements: valid on every check.",
+ "task": "upgrade-dependency",
+ "arguments": {
+  "instance": "pydantic-yaml-pydantic-2"
+ },
+ "steps": [
+  {
+   "tool": "start_upgrade",
+   "arguments": {
+    "instance": "pydantic-yaml-pydantic-2"
+   },
+   "save_as": "start"
+  },
+  {
+   "tool": "write_file",
+   "arguments": {
+    "files": [
+     {
+      "path": "dep-upgrade/pydantic-yaml-pydantic-2/src/pydantic_yaml/examples/common.py",
+      "content": "\"\"\"Common types used in examples.\"\"\"\n\nfrom enum import Enum\n\n\nclass MyStrEnum(str, Enum):\n    \"\"\"String enumeration for testing.\"\"\"\n\n    option1 = \"option1\"\n    option2 = \"option2\"\n\n\nclass MyIntEnum(int, Enum):\n    \"\"\"Integer enumeration for testing.\"\"\"\n\n    v1 = 1\n    v2 = 2\n"
+     },
+     {
+      "path": "dep-upgrade/pydantic-yaml-pydantic-2/src/pydantic_yaml/examples/v1/__init__.py",
+      "content": "\"\"\"Examples for Pydantic v1.\"\"\"\n"
+     },
+     {
+      "path": "dep-upgrade/pydantic-yaml-pydantic-2/src/pydantic_yaml/examples/v1/base_models.py",
+      "content": "\"\"\"Models used for testing, just normal `pydantic.BaseModel` objects.\"\"\"\n\n# mypy: ignore-errors\n\nfrom typing import List, Optional, Union\n\nfrom pydantic import BaseModel, Field\nfrom pydantic.types import SecretBytes, SecretStr\n\nfrom pydantic_yaml.examples.common import MyIntEnum, MyStrEnum\n\n\nclass Empty(BaseModel):\n    \"\"\"Empty model.\"\"\"\n\n\nclass A(BaseModel):\n    \"\"\"Class A.\"\"\"\n\n    a: str\n\n\nclass B(BaseModel):\n    \"\"\"Class B.\"\"\"\n\n    b: str\n\n\nclass Recursive(BaseModel):\n    \"\"\"Recursive model, which is actually unsupported.\"\"\"\n\n    inner: Optional[\"Recursive\"]\n    a: int  # Doesn't work!\n\n\nRecursive.update_forward_refs()\n\n\nclass SecretTstModel(BaseModel):\n    \"\"\"Normal model with secret fields. This can't be roundtripped.\"\"\"\n\n    ss: SecretStr\n    sb: SecretBytes\n\n\ndef _encode_secret(obj: Union[SecretStr, SecretBytes, None]) -> Union[str, bytes, None]:\n    \"\"\"Encode secret value.\"\"\"\n    if obj is None:\n        return None\n    return obj.get_secret_value()\n\n\nclass SecretTstModelDumpable(SecretTstModel):\n    \"\"\"Round-trippable model. This will save secret fields as the raw values.\"\"\"\n\n    class Config:\n        \"\"\"Configuration.\"\"\"\n\n        json_encoders = {SecretStr: _encode_secret, SecretBytes: _encode_secret}\n\n\nclass HasEnums(BaseModel):\n    \"\"\"Base model with enums.\"\"\"\n\n    opts: MyStrEnum\n    vals: List[MyIntEnum]\n\n\n# pydantic v1\n\n\nclass _Name(BaseModel):\n    \"\"\"First/last names.\"\"\"\n\n    given: str\n    family: str\n\n\nclass UsesRefs(BaseModel):\n    \"\"\"Example for the reference data.\"\"\"\n\n    bill_to: _Name = Field(alias=\"bill-to\")\n    ship_to: _Name = Field(alias=\"ship-to\")\n\n    class Config:\n        \"\"\"Pydantic configuration class.\"\"\"\n\n        allow_population_by_field_name = True\n\n\nclass CustomRootListStr(BaseModel):\n    \"\"\"Model with a custom root type.\n\n    See Also\n    --------\n    https://docs.pydantic.dev/usage/models/#custom-root-types\n    \"\"\"\n\n    __root__: List[str]\n\n\nclass CustomRootListObj(BaseModel):\n    \"\"\"Model with a custom root type, list of objects.\n\n    See Also\n    --------\n    https://docs.pydantic.dev/usage/models/#custom-root-types\n    \"\"\"\n\n    __root__: List[Union[A, B]]\n"
+     },
+     {
+      "path": "dep-upgrade/pydantic-yaml-pydantic-2/src/pydantic_yaml/examples/v2/__init__.py",
+      "content": "\"\"\"Examples for Pydantic v2.\"\"\"\n"
+     },
+     {
+      "path": "dep-upgrade/pydantic-yaml-pydantic-2/src/pydantic_yaml/examples/v2/base_models.py",
+      "content": "\"\"\"Models used for testing, just normal `pydantic.BaseModel` objects.\"\"\"\n\n# mypy: ignore-errors\n\nfrom typing import List, Optional, Union\n\nfrom pydantic import (\n    BaseModel,\n    ConfigDict,\n    Field,\n    field_serializer,\n    model_serializer,\n    model_validator,\n)\nfrom pydantic.types import SecretBytes, SecretStr\n\nfrom pydantic_yaml.examples.common import MyIntEnum, MyStrEnum\n\n\nclass Empty(BaseModel):\n    \"\"\"Empty model.\"\"\"\n\n\nclass A(BaseModel):\n    \"\"\"Class A.\"\"\"\n\n    a: str\n\n\nclass B(BaseModel):\n    \"\"\"Class B.\"\"\"\n\n    b: str\n\n\nclass Recursive(BaseModel):\n    \"\"\"Recursive model, which is actually unsupported.\"\"\"\n\n    inner: Optional[\"Recursive\"]\n    a: int  # Doesn't work!\n\n\nRecursive.model_rebuild()\n\n\nclass SecretTstModel(BaseModel):\n    \"\"\"Normal model with secret fields. This can't be roundtripped.\"\"\"\n\n    ss: SecretStr\n    sb: SecretBytes\n\n\ndef _encode_secret(obj: Union[SecretStr, SecretBytes, None]) -> Union[str, bytes, None]:\n    \"\"\"Encode secret value.\"\"\"\n    if obj is None:\n        return None\n    return obj.get_secret_value()\n\n\nclass SecretTstModelDumpable(SecretTstModel):\n    \"\"\"Round-trippable model. This will save secret fields as the raw values.\"\"\"\n\n    @field_serializer(\"ss\", \"sb\")\n    def _serialize_secrets(self, secret: Union[SecretStr, SecretBytes], _info):\n        \"\"\"Serialize secret fields.\n\n        See Also\n        --------\n        https://docs.pydantic.dev/latest/usage/serialization/#custom-serializers\n        \"\"\"\n        return _encode_secret(secret)\n\n\nclass HasEnums(BaseModel):\n    \"\"\"Base model with enums.\"\"\"\n\n    opts: MyStrEnum\n    vals: List[MyIntEnum]\n\n\nclass _Name(BaseModel):  # type: ignore[no-redef]\n    \"\"\"First/last names.\"\"\"\n\n    given: str\n    family: str\n\n\nclass UsesRefs(BaseModel):  # type: ignore[no-redef]\n    \"\"\"Example for the reference data.\"\"\"\n\n    bill_to: _Name = Field(alias=\"bill-to\")\n    ship_to: _Name = Field(alias=\"ship-to\")\n\n    # Pydantic config\n    model_config = ConfigDict(populate_by_name=True)\n\n\nclass CustomRootListStr(BaseModel):  # type: ignore[no-redef]\n    \"\"\"Model with a custom root type.\n\n    See Also\n    --------\n    https://docs.pydantic.dev/blog/pydantic-v2-alpha/#changes-to-basemodel\n    https://github.com/pydantic/pydantic/blob/2b9459f20d094a46fa3093b43c34444240f03646/tests/test_parse.py#L95-L113\n    \"\"\"\n\n    root: List[str]\n\n    @model_validator(mode=\"before\")\n    @classmethod\n    def _populate_root(cls, values):\n        if isinstance(values, CustomRootListStr):\n            return values\n        return {\"root\": values}\n\n    @model_serializer(mode=\"wrap\")\n    def _serialize(self, handler, info):\n        data = handler(self)\n        if info.mode == \"json\":\n            return data[\"root\"]\n        else:\n            return data\n\n    @classmethod\n    def model_modify_json_schema(cls, json_schema):\n        \"\"\"JSON schema changer.\"\"\"\n        return json_schema[\"properties\"][\"root\"]\n\n\nclass CustomRootListObj(BaseModel):  # type: ignore[no-redef]\n    \"\"\"Model with a custom root type, list of objects.\n\n    See Also\n    --------\n    https://docs.pydantic.dev/blog/pydantic-v2-alpha/#changes-to-basemodel\n    https://github.com/pydantic/pydantic/blob/2b9459f20d094a46fa3093b43c34444240f03646/tests/test_parse.py#L95-L113\n    \"\"\"\n\n    root: List[Union[A, B]]\n\n    @model_validator(mode=\"before\")\n    @classmethod\n    def _populate_root(cls, values):\n        if isinstance(values, CustomRootListObj):\n            return values\n        return {\"root\": values}\n\n    @model_serializer(mode=\"wrap\")\n    def _serialize(self, handler, info):\n        data = handler(self)\n        if info.mode == \"json\":\n            return data[\"root\"]\n        else:\n            return data\n\n    @classmethod\n    def model_modify_json_schema(cls, json_schema):\n        \"\"\"JSON schema changer.\"\"\"\n        return json_schema[\"properties\"][\"root\"]\n"
+     }
+    ],
+    "then": "nothing"
+   }
+  },
+  {
+   "tool": "edit_file",
+   "arguments": {
+    "edits": [
+     {
+      "path": "dep-upgrade/pydantic-yaml-pydantic-2/src/pydantic_yaml/dumper.py",
+      "old": "    writer = YAML()\n",
+      "new": "    writer = YAML(typ=\"safe\", pure=True)\n"
+     },
+     {
+      "path": "dep-upgrade/pydantic-yaml-pydantic-2/src/pydantic_yaml/dumper.py",
+      "old": "    json_val = model.json(**kwargs)\n",
+      "new": "    if pydantic.version.VERSION < \"2\":\n        json_val = model.json(**kwargs)  # type: ignore\n    else:\n        json_val = model.model_dump_json(**kwargs)  # type: ignore\n"
+     },
+     {
+      "path": "dep-upgrade/pydantic-yaml-pydantic-2/src/pydantic_yaml/dumper.py",
+      "old": "\nfrom ruamel.yaml import YAML\n",
+      "new": "\nimport pydantic\nfrom ruamel.yaml import YAML\n"
+     },
+     {
+      "path": "dep-upgrade/pydantic-yaml-pydantic-2/src/pydantic_yaml/examples/base_models.py",
+      "old": "    # pydantic v2\n\n    from pydantic import root_validator, model_serializer\n\n    class _Name(BaseModel):  # type: ignore[no-redef]\n        \"\"\"First/last names.\"\"\"\n\n        given: str\n        family: str\n\n    class UsesRefs(BaseModel):  # type: ignore[no-redef]\n        \"\"\"Example for the reference data.\"\"\"\n\n        bill_to: _Name = Field(alias=\"bill-to\")\n        ship_to: _Name = Field(alias=\"ship-to\")\n\n        # Pydantic config\n        model_config = dict(populate_by_name=True)\n\n    class CustomRootListStr(BaseModel):  # type: ignore[no-redef]\n        \"\"\"Model with a custom root type.\n\n        See Also\n        --------\n        https://docs.pydantic.dev/blog/pydantic-v2-alpha/#changes-to-basemodel\n        https://github.com/pydantic/pydantic/blob/2b9459f20d094a46fa3093b43c34444240f03646/tests/test_parse.py#L95-L113\n        \"\"\"\n\n        root: List[str]\n\n        @root_validator(pre=True)\n        @classmethod\n        def _populate_root(cls, values):\n            return {\"root\": values}\n\n        @model_serializer(mode=\"wrap\")\n        def _serialize(self, handler, info):\n            data = handler(self)\n            if info.mode == \"json\":\n                return data[\"root\"]\n            else:\n                return data\n\n        @classmethod\n        def model_modify_json_schema(cls, json_schema):\n            \"\"\"JSON schema changer.\"\"\"\n            return json_schema[\"properties\"][\"root\"]\n\n    class CustomRootListObj(BaseModel):  # type: ignore[no-redef]\n        \"\"\"Model with a custom root type, list of objects.\n\n        See Also\n        --------\n        https://docs.pydantic.dev/blog/pydantic-v2-alpha/#changes-to-basemodel\n        https://github.com/pydantic/pydantic/blob/2b9459f20d094a46fa3093b43c34444240f03646/tests/test_parse.py#L95-L113\n        \"\"\"\n\n        root: List[Union[A, B]]\n\n        @root_validator(pre=True)\n        @classmethod\n        def _populate_root(cls, values):\n            return {\"root\": values}\n\n        @model_serializer(mode=\"wrap\")\n        def _serialize(self, handler, info):\n            data = handler(self)\n            if info.mode == \"json\":\n                return data[\"root\"]\n            else:\n                return data\n\n        @classmethod\n        def model_modify_json_schema(cls, json_schema):\n            \"\"\"JSON schema changer.\"\"\"\n            return json_schema[\"properties\"][\"root\"]\n",
+      "new": "    from .v2.base_models import (\n        A,\n        B,\n        CustomRootListObj,\n        CustomRootListStr,\n        Empty,\n        HasEnums,\n        Recursive,\n        SecretTstModel,\n        SecretTstModelDumpable,\n        UsesRefs,\n    )\n"
+     },
+     {
+      "path": "dep-upgrade/pydantic-yaml-pydantic-2/src/pydantic_yaml/examples/base_models.py",
+      "old": "\nclass Empty(BaseModel):\n    \"\"\"Empty model.\"\"\"\n\n\nclass A(BaseModel):\n    \"\"\"Class A.\"\"\"\n\n    a: str\n\n\nclass B(BaseModel):\n    \"\"\"Class B.\"\"\"\n\n    b: str\n\n\nclass Recursive(BaseModel):\n    \"\"\"Recursive model, which is actually unsupported.\"\"\"\n\n    inner: Optional[\"Recursive\"]\n    a: int  # Doesn't work!\n\n\nRecursive.update_forward_refs()\n\n\nclass SecretTstModel(BaseModel):\n    \"\"\"Normal model with secret fields. This can't be roundtripped.\"\"\"\n\n    ss: SecretStr\n    sb: SecretBytes\n\n\ndef _encode_secret(obj: Union[SecretStr, SecretBytes, None]) -> Union[str, bytes, None]:\n    \"\"\"Encode secret value.\"\"\"\n    if obj is None:\n        return None\n    return obj.get_secret_value()\n\n\nclass SecretTstModelDumpable(SecretTstModel):\n    \"\"\"Round-trippable model. This will save secret fields as the raw values.\"\"\"\n\n    class Config:\n        \"\"\"Configuration.\"\"\"\n\n        json_encoders = {SecretStr: _encode_secret, SecretBytes: _encode_secret}\n\n\nclass MyStrEnum(str, Enum):\n    \"\"\"String enumeration for testing.\"\"\"\n\n    option1 = \"option1\"\n    option2 = \"option2\"\n\n\nclass MyIntEnum(int, Enum):\n    \"\"\"Integer enumeration for testing.\"\"\"\n\n    v1 = 1\n    v2 = 2\n\n\nclass HasEnums(BaseModel):\n    \"\"\"Base model with enums.\"\"\"\n\n    opts: MyStrEnum\n    vals: List[MyIntEnum]\n\n\nif pydantic.VERSION < \"2\":\n    # pydantic v1\n\n    class _Name(BaseModel):\n        \"\"\"First/last names.\"\"\"\n\n        given: str\n        family: str\n\n    class UsesRefs(BaseModel):\n        \"\"\"Example for the reference data.\"\"\"\n\n        bill_to: _Name = Field(alias=\"bill-to\")\n        ship_to: _Name = Field(alias=\"ship-to\")\n\n        class Config:\n            \"\"\"Pydantic configuration class.\"\"\"\n\n            allow_population_by_field_name = True\n\n    class CustomRootListStr(BaseModel):\n        \"\"\"Model with a custom root type.\n\n        See Also\n        --------\n        https://docs.pydantic.dev/usage/models/#custom-root-types\n        \"\"\"\n\n        __root__: List[str]\n\n    class CustomRootListObj(BaseModel):\n        \"\"\"Model with a custom root type, list of objects.\n\n        See Also\n        --------\n        https://docs.pydantic.dev/usage/models/#custom-root-types\n        \"\"\"\n\n        __root__: List[Union[A, B]]\n\n",
+      "new": "if pydantic.version.VERSION < \"2\":\n    from .v1.base_models import (\n        A,\n        B,\n        CustomRootListObj,\n        CustomRootListStr,\n        Empty,\n        HasEnums,\n        Recursive,\n        SecretTstModel,\n        SecretTstModelDumpable,\n        UsesRefs,\n    )\n"
+     },
+     {
+      "path": "dep-upgrade/pydantic-yaml-pydantic-2/src/pydantic_yaml/examples/base_models.py",
+      "old": "from pydantic import BaseModel, Field\nfrom pydantic.types import SecretBytes, SecretStr\n",
+      "new": "\nfrom .common import MyIntEnum, MyStrEnum\n"
+     },
+     {
+      "path": "dep-upgrade/pydantic-yaml-pydantic-2/src/pydantic_yaml/examples/base_models.py",
+      "old": "from typing import List, Optional, Union\n",
+      "new": ""
+     },
+     {
+      "path": "dep-upgrade/pydantic-yaml-pydantic-2/src/pydantic_yaml/examples/base_models.py",
+      "old": "from enum import Enum\n",
+      "new": "# type: ignore\n\n__all__ = [\n    \"Empty\",\n    \"A\",\n    \"B\",\n    \"Recursive\",\n    \"SecretTstModel\",\n    \"SecretTstModelDumpable\",\n    \"MyStrEnum\",\n    \"MyIntEnum\",\n    \"HasEnums\",\n    \"UsesRefs\",\n    \"CustomRootListStr\",\n    \"CustomRootListObj\",\n    \"root\",\n]\n\n"
+     },
+     {
+      "path": "dep-upgrade/pydantic-yaml-pydantic-2/src/pydantic_yaml/loader.py",
+      "old": "    res = parse_obj_as(model_type, objects)\n    return res\n",
+      "new": "    if pydantic.version.VERSION < \"2\":\n        return pydantic.parse_obj_as(model_type, objects)  # type:ignore\n    else:\n        ta = pydantic.TypeAdapter(model_type)  # type: ignore\n        return ta.validate_python(objects)\n"
+     },
+     {
+      "path": "dep-upgrade/pydantic-yaml-pydantic-2/src/pydantic_yaml/loader.py",
+      "old": "from pydantic import BaseModel, parse_obj_as\n",
+      "new": "import pydantic\nfrom pydantic import BaseModel\n"
+     }
+    ],
+    "then": "sync_and_test"
+   },
+   "save_as": "edited"
+  },
+  {
+   "tool": "judge",
+   "arguments": {
+    "instance": "pydantic-yaml-pydantic-2"
+   },
+   "save_as": "judged"
+  },
+  {
+   "tool": "submit",
+   "arguments": {
+    "instance": "pydantic-yaml-pydantic-2",
+    "dependency": "pydantic",
+    "from_version": "1.10.11",
+    "to_version": "2.0.3",
+    "requirement": "pydantic>=1.8",
+    "changed_files": [
+     "src/pydantic_yaml/dumper.py",
+     "src/pydantic_yaml/examples/base_models.py",
+     "src/pydantic_yaml/examples/common.py",
+     "src/pydantic_yaml/examples/v1/__init__.py",
+     "src/pydantic_yaml/examples/v1/base_models.py",
+     "src/pydantic_yaml/examples/v2/__init__.py",
+     "src/pydantic_yaml/examples/v2/base_models.py",
+     "src/pydantic_yaml/loader.py"
+    ],
+    "migration": [
+     "Raised pydantic to admit 2.0.3 in pyproject.toml",
+     "Migrated src/pydantic_yaml/dumper.py to the pydantic 2.0.3 API",
+     "Migrated src/pydantic_yaml/examples/base_models.py to the pydantic 2.0.3 API",
+     "Migrated src/pydantic_yaml/examples/common.py to the pydantic 2.0.3 API",
+     "Migrated src/pydantic_yaml/examples/v1/__init__.py to the pydantic 2.0.3 API",
+     "Migrated src/pydantic_yaml/examples/v1/base_models.py to the pydantic 2.0.3 API",
+     "Migrated src/pydantic_yaml/examples/v2/__init__.py to the pydantic 2.0.3 API",
+     "Migrated src/pydantic_yaml/examples/v2/base_models.py to the pydantic 2.0.3 API"
+    ]
+   }
+  }
+ ],
+ "answer": "Upgraded, judged and submitted.",
+ "expect": {
+  "valid": true,
+  "score_min": 1.0
+ }
+}

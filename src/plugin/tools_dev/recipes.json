@@ -1,0 +1,109 @@
+[
+ {
+  "id": "respx-httpx-0.28",
+  "title": "respx: support httpx 0.28",
+  "repo": "lundberg/respx",
+  "license": "BSD-3-Clause",
+  "upstream_commit": "179c65131b16e895e9da0e2d629aab3db6a97694",
+  "dependency": "httpx",
+  "import_names": [
+   "httpx"
+  ],
+  "python": "3.12",
+  "spec": {
+   "kind": "setup_py",
+   "file": "setup.py"
+  },
+  "source_globs": [
+   "respx/**/*.py"
+  ],
+  "test_dirs": [
+   "tests"
+  ],
+  "test_requirements": [
+   "pytest",
+   "pytest-asyncio",
+   "pytest-cov",
+   "trio",
+   "starlette",
+   "flask"
+  ],
+  "pytest_args": [
+   "--no-cov"
+  ],
+  "path_entries": [
+   "."
+  ],
+  "notes": "Test requirements from the repository's noxfile; coverage is off (--no-cov) because a subset run cannot meet its 100% gate."
+ },
+ {
+  "id": "sqlalchemy-mixins-sqlalchemy-2",
+  "title": "sqlalchemy-mixins: migrate to SQLAlchemy 2.0",
+  "repo": "absent1706/sqlalchemy-mixins",
+  "license": "MIT",
+  "upstream_commit": "e0aa411c23e906b90731a981288501c95664fdf2",
+  "dependency": "SQLAlchemy",
+  "import_names": [
+   "sqlalchemy"
+  ],
+  "python": "3.11",
+  "spec": {
+   "kind": "requirements_txt",
+   "file": "requirements.txt"
+  },
+  "base_constraints": [
+   "sqlalchemy<2"
+  ],
+  "source_globs": [
+   "sqlalchemy_mixins/*.py",
+   "sqlalchemy_mixins/*.pyi"
+  ],
+  "test_dirs": [
+   "sqlalchemy_mixins/tests"
+  ],
+  "test_requirements": [
+   "pytest"
+  ],
+  "pytest_args": [],
+  "path_entries": [
+   "."
+  ],
+  "notes": "The spec (requirements.txt, 'sqlalchemy >= 1.0') already admits 2.0, so the pre-upgrade lock is held below 2 as upstream's CI ran it; upstream's commit raises it to >= 2.0. Python 3.11: SQLAlchemy 1.4.47 (April 2023) has no 3.12 wheels. Tests are unittest classes, run with pytest."
+ },
+ {
+  "id": "pydantic-yaml-pydantic-2",
+  "title": "pydantic-yaml: support pydantic 2",
+  "repo": "NowanIlfideme/pydantic-yaml",
+  "license": "MIT",
+  "upstream_commit": "c3ad43ea76294a27da61dc88e418e8785dfdad53",
+  "dependency": "pydantic",
+  "import_names": [
+   "pydantic"
+  ],
+  "python": "3.11",
+  "spec": {
+   "kind": "pep621",
+   "file": "pyproject.toml"
+  },
+  "base_constraints": [
+   "pydantic<2"
+  ],
+  "source_globs": [
+   "src/pydantic_yaml/**/*.py"
+  ],
+  "test_dirs": [
+   "src/test"
+  ],
+  "test_requirements": [
+   "pytest"
+  ],
+  "pytest_args": [
+   "-W",
+   "error::DeprecationWarning"
+  ],
+  "path_entries": [
+   "src"
+  ],
+  "notes": "The requirement (pydantic>=1.8) already admits 2.0; the pre-upgrade lock is held below 2. Upstream supports both majors by checking pydantic.version.VERSION. Python 3.11: pydantic 1.10.11 (July 2023) has no 3.12 wheels. Deprecation warnings are errors: upstream's change moved the code off pydantic's deprecated v1 API (parse_obj_as, .json()), which pydantic 2 still accepts with a warning."
+ }
+]

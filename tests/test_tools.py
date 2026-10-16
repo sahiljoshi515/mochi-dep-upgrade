@@ -1,328 +1,117 @@
-"""The tools' own rules, without uv or a network: confinement, listings, reads, searches, writes,
-the forbidden-pattern scan, the pytest recorder and the pin of every shipped project."""
+"""The tools that change the project, on the synthetic instance (no network): exact replacements,
+all or none, only where the instance allows, with valid content; whole-file writes alike."""
 
 from __future__ import annotations
 
-import json
-import os
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
-from slimconfig import build_output, plain_output
+import synthetic as s
 
 from contract import (
+    Edit,
+    EditInput,
     FileWrite,
+    InstanceId,
     ListInput,
-    PinOutput,
-    ProjectId,
     ReadInput,
     SearchInput,
+    Then,
     UpgradeInput,
     WriteInput,
-    Written,
 )
-from plugin.build import RUNNER, check_targets
-from plugin.common import (
-    PLUGIN_ROOT,
-    Budget,
-    ToolError,
-    confine,
-    is_protected,
-    load_progress,
-    oversized,
-    prune_scratch,
-    save_progress,
-    scratch_home,
-    scrub,
-    tree_entries,
-    tree_hash,
+from contract import TestsInput as RunTestsInput
+from plugin import project
+from plugin.common import ToolError
+from plugin.files import edit_file, list_files, read_file, search, write_file
+from plugin.sync import check_targets, sync
+from verifier import catalog
+
+ROOT = f"dep-upgrade/{s.ID}"
+
+
+@pytest.fixture
+def started(tmp_path: Path, demo: dict) -> Path:
+    s.started_workspace(tmp_path, demo, run=project.RUN)
+    return tmp_path
+
+
+def edit(path: str, old: str, new: str) -> Edit:
+    return Edit(path=f"{ROOT}/{path}", old=old, new=new)
+
+
+def test_edit_applies_exact_replacements_in_order(started: Path):
+    out = edit_file(EditInput(edits=[edit("demo/core.py", "return httpx", "request = httpx"), edit("demo/core.py", "request = httpx.Request('GET', 'https://x').method", "request = httpx.Request('GET', 'https://x')\n    return request.method")], then=Then.NOTHING), started)
+    assert [item.replacements for item in out.edited] == [2] and out.sync is None and out.tests is None
+    assert (started / ROOT / "demo" / "core.py").read_text() == s.UPGRADED["demo/core.py"]
+
+
+def test_edit_is_all_or_none(started: Path):
+    before = (started / ROOT / "demo" / "core.py").read_text()
+    with pytest.raises(ToolError, match="occurs 0 times"):
+        edit_file(EditInput(edits=[edit("demo/core.py", "import httpx", "import httpx as h"), edit("demo/core.py", "not there", "x")], then=Then.NOTHING), started)
+    assert (started / ROOT / "demo" / "core.py").read_text() == before
+
+
+@pytest.mark.parametrize(
+    ("path", "old", "new", "message"),
+    [
+        ("tests/test_core.py", "GET", "POST", "may not change"),
+        ("README.md", "demo", "x", "may not change"),
+        ("demo/core.py", "def answer():", "def answer(:", "would not be valid Python"),
+        ("demo/core.py", "\n", "\n\n", "occurs"),
+        ("setup.py", 'name="demo"', 'name="other"', "only the requirements in setup.py may change"),
+        (".judge/ready.json", "run", "x", "reserved for the judge"),
+    ],
 )
-from plugin.files import cap_lines, list_files, read_file, search, write_file
-from plugin.instances import all_instances, load_instance
-from plugin.judge import scan_forbidden
-from plugin.project import READY, direct_dependency_names, locked_versions, pin_project, rules_for, uses_of
-from plugin.tools_dev.patches import changed_files_of
-
-PROJECT = "invoicer-pydantic-2"
+def test_edit_refusals(started: Path, path: str, old: str, new: str, message: str):
+    with pytest.raises(ToolError, match=message):
+        edit_file(EditInput(edits=[edit(path, old, new)], then=Then.NOTHING), started)
 
 
-def started_workspace(tmp_path: Path) -> tuple[Path, Path]:
-    """A workspace with the pristine invoicer project copied in and marked ready (no venv)."""
-    inst = load_instance(PROJECT)
-    root = tmp_path / "dep-upgrade" / PROJECT
-    import shutil
-
-    shutil.copytree(inst.project_dir, root, ignore=shutil.ignore_patterns("__pycache__"))
-    (root / ".judge").mkdir()
-    (root / ".judge" / READY).write_text("{}")
-    return tmp_path, root
+def test_the_spec_requirements_may_change(started: Path):
+    edit_file(EditInput(edits=[edit("setup.py", '"httpx>=0.25.0,<0.28.0"', '"httpx>=0.25.0"')], then=Then.NOTHING), started)
+    assert '"httpx>=0.25.0"' in (started / ROOT / "setup.py").read_text()
 
 
-def test_confine_rejects_escapes(tmp_path: Path):
-    (tmp_path / "inside").mkdir()
-    assert confine(tmp_path, "inside") == (tmp_path / "inside").resolve()
-    for bad in ("/etc/passwd", "../x", "a/../../x", "", " ", "a\0b", ".judge/x", "dep-upgrade/p/.judge/judgement.json"):
+def test_edit_keeps_line_endings(started: Path):
+    path = started / ROOT / "demo" / "core.py"
+    path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+    edit_file(EditInput(edits=[edit("demo/core.py", "import httpx", "import httpx  # client")], then=Then.NOTHING), started)
+    assert b"import httpx  # client\r\n" in path.read_bytes()
+
+
+def test_write_creates_new_source_files_but_nothing_else(started: Path):
+    out = write_file(WriteInput(files=[FileWrite(path=f"{ROOT}/demo/compat.py", content="VALUE = 1\n")], then=Then.NOTHING), started)
+    assert out.written[0].bytes == 10
+    with pytest.raises(ToolError, match="may not change"):
+        write_file(WriteInput(files=[FileWrite(path=f"{ROOT}/tests/test_new.py", content="x = 1\n")], then=Then.NOTHING), started)
+    with pytest.raises(ToolError, match="may not change"):
+        write_file(WriteInput(files=[FileWrite(path=f"{ROOT}/demo/conftest.py", content="x = 1\n")], then=Then.NOTHING), started)
+
+
+def test_tools_need_this_runs_start(tmp_path: Path, demo: dict):
+    s.started_workspace(tmp_path, demo, run="an-earlier-run")
+    with pytest.raises(ToolError, match="start_upgrade .* first"):
+        edit_file(EditInput(edits=[edit("demo/core.py", "import httpx", "import httpx")], then=Then.NOTHING), tmp_path)
+    with pytest.raises(ToolError, match="start_upgrade .* first"):
+        sync(UpgradeInput(instance=InstanceId(s.ID)), tmp_path)
+
+
+def test_reads_stay_out_of_the_judges_folder(started: Path):
+    listed = list_files(ListInput(path=ROOT, max_entries=200), started)
+    assert listed.entries and all(".judge" not in entry.path.split("/") for entry in listed.entries)
+    with pytest.raises(ToolError, match="reserved for the judge"):
+        read_file(ReadInput(path=f"{ROOT}/.judge/ready.json", start_line=1, max_lines=5), started)
+    hits = search(SearchInput(path=ROOT, pattern="httpx", glob="*.py", max_hits=10), started)
+    assert hits.hits and all(".judge" not in hit.path for hit in hits.hits)
+
+
+def test_test_targets_stay_in_the_test_folders(demo: dict):
+    entry = catalog.entry(s.ID)
+    assert check_targets(entry, []) == ["tests"]
+    assert check_targets(entry, ["tests/test_core.py::test_answer"]) == ["tests/test_core.py::test_answer"]
+    for bad in ("demo/core.py", "-x", "../tests/x.py", "/abs/tests/x.py"):
         with pytest.raises(ToolError):
-            confine(tmp_path, bad)
-    assert confine(tmp_path, ".judge/x", allow_judge=True).name == "x"
-    (tmp_path / "link").symlink_to("/etc")
-    with pytest.raises(ToolError, match="inside the workspace"):
-        confine(tmp_path, "link/passwd")
-
-
-def test_listing_reading_and_searching(tmp_path: Path):
-    workspace, root = started_workspace(tmp_path)
-    (root / ".venv").mkdir()
-    (root / ".venv" / "secret.py").write_text("x")
-    listed = list_files(ListInput(path=f"dep-upgrade/{PROJECT}", max_entries=200), workspace)
-    paths = [entry.path for entry in listed.entries]
-    assert f"dep-upgrade/{PROJECT}/pyproject.toml" in paths and f"dep-upgrade/{PROJECT}/src/invoicer/models.py" in paths
-    assert not any(".venv" in path or ".judge" in path for path in paths)
-    assert listed.truncated is False and listed.total == len(paths)
-    short = list_files(ListInput(path=f"dep-upgrade/{PROJECT}", max_entries=3), workspace)
-    assert len(short.entries) == 3 and short.truncated is True and short.total == listed.total
-
-    read = read_file(ReadInput(path=f"dep-upgrade/{PROJECT}/pyproject.toml", start_line=1, max_lines=5), workspace)
-    assert read.lines[0] == "[build-system]" and len(read.lines) == 5 and read.total_lines > 5
-    tail = read_file(ReadInput(path=f"dep-upgrade/{PROJECT}/pyproject.toml", start_line=read.total_lines, max_lines=50), workspace)
-    assert len(tail.lines) == 1
-    with pytest.raises(ToolError):
-        read_file(ReadInput(path=f"dep-upgrade/{PROJECT}/src", start_line=1, max_lines=5), workspace)
-    with pytest.raises(ToolError):
-        read_file(ReadInput(path=f"dep-upgrade/{PROJECT}/.judge/ready.json", start_line=1, max_lines=5), workspace)
-
-    found = search(SearchInput(path=f"dep-upgrade/{PROJECT}", pattern=r"regex=", glob="*.py", max_hits=50), workspace)
-    assert found.hits and all(hit.path.startswith(f"dep-upgrade/{PROJECT}/src/") for hit in found.hits)
-    assert all("regex=" in hit.text for hit in found.hits)
-    capped = search(SearchInput(path=f"dep-upgrade/{PROJECT}", pattern=r"import", glob="*.py", max_hits=2), workspace)
-    assert len(capped.hits) == 2 and capped.truncated is True
-    with pytest.raises(ToolError, match="regular expression"):
-        search(SearchInput(path=f"dep-upgrade/{PROJECT}", pattern="(", glob="*", max_hits=5), workspace)
-
-
-def test_write_file_rules(tmp_path: Path):
-    workspace, root = started_workspace(tmp_path)
-    models = f"dep-upgrade/{PROJECT}/src/invoicer/models.py"
-    made = write_file(WriteInput(files=[FileWrite(path=models, content="X = 1\n")]), workspace)
-    assert made.written == [Written(path=models, bytes=6)] and (root / "src/invoicer/models.py").read_text() == "X = 1\n"
-    new = f"dep-upgrade/{PROJECT}/src/invoicer/compat/__init__.py"
-    both = write_file(WriteInput(files=[FileWrite(path=new, content=""), FileWrite(path=models, content="X = 2\n")]), workspace)
-    assert [item.path for item in both.written] == [new, models] and (root / "src/invoicer/compat/__init__.py").is_file()
-    for path in (
-        f"dep-upgrade/{PROJECT}/tests/test_models.py",
-        f"dep-upgrade/{PROJECT}/uv.lock",
-        f"dep-upgrade/{PROJECT}/README.md",
-        f"dep-upgrade/{PROJECT}/src/invoicer/notes.txt",
-        f"dep-upgrade/{PROJECT}/src/other/x.py",
-        f"dep-upgrade/{PROJECT}/src/invoicer/conftest.py",
-        f"dep-upgrade/{PROJECT}/.judge/judgement.json",
-        "dep-upgrade/ledger-sqlalchemy-2/pyproject.toml",
-        "pyproject.toml",
-    ):
-        with pytest.raises(ToolError):
-            write_file(WriteInput(files=[FileWrite(path=path, content="x = 1\n")]), workspace)
-    # All or none: a refused file in the batch leaves the good one unwritten.
-    with pytest.raises(ToolError, match="valid Python"):
-        write_file(WriteInput(files=[FileWrite(path=models, content="X = 3\n"), FileWrite(path=models.replace("models", "broken"), content="def broken(:\n")]), workspace)
-    assert (root / "src/invoicer/models.py").read_text() == "X = 2\n" and not (root / "src/invoicer/broken.py").exists()
-    with pytest.raises(ToolError, match="limit"):
-        write_file(WriteInput(files=[FileWrite(path=models, content="#" * (60 * 1024 + 1))]), workspace)
-    with pytest.raises(ToolError, match="1 to 5"):
-        write_file(WriteInput(files=[]), workspace)
-    with pytest.raises(ToolError, match="twice"):
-        write_file(WriteInput(files=[FileWrite(path=models, content="a = 1\n"), FileWrite(path=models, content="a = 2\n")]), workspace)
-
-    pyproject = f"dep-upgrade/{PROJECT}/pyproject.toml"
-    pristine = (load_instance(PROJECT).project_dir / "pyproject.toml").read_text()
-    bumped = pristine.replace('"pydantic>=1.10.13,<2",', '"pydantic==2.14.1",\n    "pydantic-settings>=2.10",')
-    assert write_file(WriteInput(files=[FileWrite(path=pyproject, content=bumped)]), workspace).written[0].bytes == len(bumped.encode())
-    with pytest.raises(ToolError, match="dependencies array"):
-        write_file(WriteInput(files=[FileWrite(path=pyproject, content=pristine.replace('requires-python = ">=3.12"', 'requires-python = ">=3.13"'))]), workspace)
-    with pytest.raises(ToolError, match="dependencies array"):
-        write_file(WriteInput(files=[FileWrite(path=pyproject, content=pristine + "\n[tool.ruff]\nline-length = 100\n")]), workspace)
-    with pytest.raises(ToolError, match="TOML"):
-        write_file(WriteInput(files=[FileWrite(path=pyproject, content="[project\n")]), workspace)
-    with pytest.raises(ToolError, match="requirements"):
-        write_file(WriteInput(files=[FileWrite(path=pyproject, content=pristine.replace('"pydantic>=1.10.13,<2",', '"pydantic >= one",'))]), workspace)
-
-
-def test_read_file_stays_under_8_kb(tmp_path: Path):
-    workspace, root = started_workspace(tmp_path)
-    big = f"dep-upgrade/{PROJECT}/src/invoicer/big.py"
-    (root / "src/invoicer/big.py").write_text("\n".join(f"line_{n} = {'x' * 100!r}" for n in range(200)) + "\n")
-    read = read_file(ReadInput(path=big, start_line=1, max_lines=200), workspace)
-    assert read.truncated is True and 0 < len(read.lines) < 200
-    assert sum(len(line.encode()) + 1 for line in read.lines) <= 8 * 1024
-    rest = read_file(ReadInput(path=big, start_line=1 + len(read.lines), max_lines=200), workspace)
-    assert rest.start_line == 1 + len(read.lines)
-    assert cap_lines(["x" * 9000]) == (["x" * 8191], True)
-    assert cap_lines(["a", "b"]) == (["a", "b"], False)
-
-
-def test_uses_of_lists_the_importing_modules(tmp_path: Path):
-    _workspace, root = started_workspace(tmp_path)
-    uses = uses_of(root, load_instance(PROJECT))
-    assert "src/invoicer/models.py" in uses and "src/invoicer/settings.py" in uses
-    assert "src/invoicer/errors.py" not in uses and len(uses) <= 20
-    notes_root = tmp_path / "dep-upgrade" / "notes-flask-3"
-    import shutil
-
-    shutil.copytree(load_instance("notes-flask-3").project_dir, notes_root)
-    assert "src/notes/slugs.py" in uses_of(notes_root, load_instance("notes-flask-3"))
-
-
-def test_progress_and_budget(tmp_path: Path):
-    assert load_progress(tmp_path) == {}
-    save_progress(tmp_path, {"start": {"copied": True}})
-    assert load_progress(tmp_path) == {"start": {"copied": True}}
-    (tmp_path / ".judge" / "progress.json").write_text("not json")
-    assert load_progress(tmp_path) == {}
-    budget = Budget(seconds=100)
-    assert budget.allows(50) and budget.slice(30) == 30 and budget.slice(200) <= 95
-    spent = Budget(seconds=0)
-    assert not spent.allows(1) and spent.slice(30) == 1.0
-
-
-def test_write_file_needs_a_started_project(tmp_path: Path):
-    with pytest.raises(ToolError, match="start_project"):
-        write_file(WriteInput(files=[FileWrite(path=f"dep-upgrade/{PROJECT}/pyproject.toml", content="x")]), tmp_path)
-
-
-def test_forbidden_scan_and_targets(tmp_path: Path):
-    src = tmp_path / "src"
-    (src / "pkg").mkdir(parents=True)
-    (src / "pkg" / "a.py").write_text("import warnings\nwarnings.filterwarnings('ignore')\nfrom pydantic.v1 import BaseModel\n")
-    (src / "pkg" / "b.py").write_text("x = 1\n")
-    found = scan_forbidden(src, (r"pydantic\.v1", r"warnings\.(filterwarnings|simplefilter)"))
-    assert found == ["src/pkg/a.py:2: warnings\\.(filterwarnings|simplefilter)", "src/pkg/a.py:3: pydantic\\.v1"]
-    assert scan_forbidden(src, ()) == []
-
-    root = tmp_path / "root"
-    (root / "tests").mkdir(parents=True)
-    (root / "tests" / "test_x.py").write_text("")
-    assert check_targets(root, []) == ["tests"]
-    assert check_targets(root, ["tests/test_x.py::test_a", "tests"]) == ["tests/test_x.py::test_a", "tests"]
-    for bad in (["-k", "x"], ["src/x.py"], ["tests/missing.py"], ["../tests"], ["tests/x.py"] * 51):
-        with pytest.raises(ToolError):
-            check_targets(root, bad)
-
-
-def test_pytest_recorder_records_every_outcome(tmp_path: Path):
-    rundir = tmp_path / "run"
-    rundir.mkdir()
-    (rundir / "nanoagent_pytest_json.py").write_text(RUNNER.read_text())
-    (rundir / "test_sample.py").write_text(
-        "import pytest\n\n"
-        "def test_ok():\n    assert True\n\n"
-        "def test_bad():\n    assert 1 == 2\n\n"
-        "@pytest.mark.skip\ndef test_skipped():\n    pass\n\n"
-        "@pytest.mark.xfail\ndef test_xfail():\n    assert False\n\n"
-        "@pytest.fixture\ndef broken():\n    raise RuntimeError('no')\n\n"
-        "def test_error(broken):\n    pass\n"
-    )
-    (rundir / "test_broken.py").write_text("import nope\n")
-    report = rundir / "report.json"
-    completed = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "nanoagent_pytest_json", f"--nanoagent-json={report}", f"--rootdir={rundir}", "--continue-on-collection-errors", "test_sample.py", "test_broken.py"],
-        cwd=rundir,
-        env={**os.environ, "PYTHONPATH": str(rundir), "PYTHONDONTWRITEBYTECODE": "1"},
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    data = json.loads(report.read_text())
-    assert data["exit_status"] == completed.returncode != 0
-    assert data["outcomes"] == {
-        "test_sample.py::test_ok": "passed",
-        "test_sample.py::test_bad": "failed",
-        "test_sample.py::test_skipped": "skipped",
-        "test_sample.py::test_xfail": "xfailed",
-        "test_sample.py::test_error": "error",
-    }
-    assert data["collection_errors"] and "test_broken.py" in next(iter(data["collection_errors"]))
-    assert "1 == 2" in data["messages"]["test_sample.py::test_bad"]
-
-
-def test_scrub_hides_the_plugin_folder():
-    assert scrub([f"at {PLUGIN_ROOT}/src/x.py", "fine"]) == ["at <plugin>/src/x.py", "fine"]
-
-
-def test_tree_hash_rules(tmp_path: Path):
-    (tmp_path / "tests").mkdir()
-    (tmp_path / "tests" / "__pycache__").mkdir()
-    (tmp_path / "tests" / "__pycache__" / "x.pyc").write_bytes(b"\0")
-    (tmp_path / "tests" / "test_a.py").write_text("a")
-    (tmp_path / ".judge").mkdir()
-    (tmp_path / ".judge" / "judgement.json").write_text("{}")
-    (tmp_path / "README.md").write_text("r")
-    entries = tree_entries(tmp_path)
-    assert [rel for rel, _ in entries] == ["README.md", "tests/test_a.py"]
-    assert all(is_protected(rel) for rel, _ in entries)
-    first = tree_hash(entries)
-    (tmp_path / "tests" / "test_a.py").write_text("b")
-    assert tree_hash(tree_entries(tmp_path)) != first
-
-
-def test_pyproject_helpers():
-    data = {"project": {"dependencies": ["Flask>=2.2,<2.3", "werkzeug>=2.2"]}, "dependency-groups": {"dev": ["pytest>=8", {"include-group": "x"}]}}
-    assert direct_dependency_names(data) == ["flask", "werkzeug", "pytest"]
-    lock = 'version = 1\n\n[[package]]\nname = "Flask"\nversion = "2.2.5"\n\n[[package]]\nname = "notes"\nversion = "2.3.1"\nsource = { editable = "." }\n'
-    assert locked_versions(lock) == {"flask": "2.2.5", "notes": "2.3.1"}
-
-
-@pytest.mark.parametrize("inst", all_instances(), ids=lambda inst: inst.id)
-def test_every_shipped_project_pins_and_reads_back(tmp_path: Path, inst):
-    pin = pin_project(UpgradeInput(project=ProjectId(inst.id)), tmp_path)
-    assert build_output(plain_output(pin), PinOutput) == pin
-    assert pin.from_version == inst.from_version and pin.target_version == inst.target_version
-    assert pin.hidden_test_ids and all(test.startswith("test_hidden_") for test in pin.hidden_test_ids)
-    assert pin.other_dependencies.get("pytest")
-    assert inst.dependency.lower() not in pin.other_dependencies
-    # The pristine code must use the breaking APIs the task is about; the hidden tests only the package.
-    hidden_text = "\n".join(path.read_text() for path in inst.hidden_dir.glob("test_hidden_*.py"))
-    assert f"import {inst.import_name}" not in hidden_text and f"from {inst.import_name}" not in hidden_text
-    assert all("test_hidden_" in test for test in inst.hidden_test_ids)
-    files = changed_files_of(inst)
-    assert "pyproject.toml" in files and all(rel == "pyproject.toml" or rel.startswith(f"src/{inst.package}/") for rel in files)
-    assert len(files) >= 2
-    rules = rules_for(inst)
-    assert any(inst.target_version in rule for rule in rules) and len(rules) >= 6
-    assert not any(str(PLUGIN_ROOT) in rule for rule in rules)
-    public_tests = sorted((inst.project_dir / "tests").glob("test_*.py"))
-    assert public_tests and (inst.project_dir / "README.md").is_file() and (inst.project_dir / "uv.lock").is_file()
-
-
-def test_scratch_home_is_outside_the_workspace_and_stable(tmp_path: Path):
-    import tempfile
-
-    home = scratch_home(tmp_path)
-    assert home == scratch_home(tmp_path) and home != scratch_home(tmp_path / "other")
-    assert not home.is_relative_to(tmp_path.resolve())
-    assert home.parent == Path(tempfile.gettempdir()).resolve()
-    assert home.name.startswith("nanoagent-dep-upgrade-") and len(home.name) == len("nanoagent-dep-upgrade-") + 64
-
-
-def test_oversized_and_prune(tmp_path: Path):
-    import os
-    import time
-
-    (tmp_path / "small.bin").write_bytes(b"x" * 1024)
-    with (tmp_path / "big.bin").open("wb") as handle:
-        handle.seek(8 * 1024 * 1024)
-        handle.write(b"\0")
-    assert oversized(tmp_path) == [("big.bin", 8 * 1024 * 1024 + 1)]
-    assert oversized(tmp_path, limit=9 * 1024 * 1024) == []
-    keep = tmp_path / "nanoagent-dep-upgrade-keep"
-    old = tmp_path / "nanoagent-dep-upgrade-old"
-    fresh = tmp_path / "nanoagent-dep-upgrade-fresh"
-    other = tmp_path / "unrelated-old"
-    for folder in (keep, old, fresh, other):
-        folder.mkdir()
-        (folder / "f").write_text("x")
-    stale = time.time() - 13 * 3600
-    os.utime(old, (stale, stale))
-    os.utime(other, (stale, stale))
-    assert prune_scratch(keep) == 1
-    assert keep.exists() and fresh.exists() and other.exists() and not old.exists()
+            check_targets(entry, [bad])
+    assert RunTestsInput(instance=InstanceId(s.ID), tests=[]).tests == []

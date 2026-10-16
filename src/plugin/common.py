@@ -1,8 +1,9 @@
-"""Shared by every tool: path confinement, subprocesses, hashing, the environment uv runs in, and
-the budget and progress record that let a long tool stop and resume.
+"""Shared by every tool: path confinement, subprocesses, hashing, the environment uv runs in, the
+scratch folder outside the workspace, and the budget and progress record that let a long tool stop
+and resume.
 
-Nothing here names the plugin's own folder in a message: every path a tool reports is relative
-to the workspace.
+Nothing here names the plugin's own folder in a message: every path a tool reports is relative to
+the workspace.
 """
 
 from __future__ import annotations
@@ -15,18 +16,15 @@ import signal
 import subprocess
 import tempfile
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-# Every project lives at <workspace>/dep-upgrade/<project>/.
+# Every instance lives at <workspace>/dep-upgrade/<instance>/.
 WORKSPACE_PREFIX = "dep-upgrade"
-# The trusted tools' own folder in a project: the judgement, run folders, a HOME for subprocesses.
+# The trusted tools' own folder in a project: the pristine record, the lock, the judgement.
 JUDGE_DIR = ".judge"
 PROGRESS = "progress.json"
-# What git, uv, Python and pytest create: never listed, searched, hashed or judged.
-TOOL_DIRS = frozenset({".git", ".venv", JUDGE_DIR, "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", "dist", "build"})
-HASH_SKIP = frozenset({".git", ".venv", JUDGE_DIR, "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".DS_Store"})
 # The host's variables a subprocess may keep: how it reaches the index, where uv caches.
 PASSTHROUGH_ENV = (
     "HTTPS_PROXY",
@@ -53,10 +51,10 @@ BUDGET = 140.0
 # No tool writes a file this large into the workspace: the host syncs the workspace back and
 # refuses files over 10 MB.
 MAX_WORKSPACE_FILE = 8 * 1024 * 1024
-# Where a workspace's venvs, build output, run folders and subprocess HOME live: outside the
-# workspace, under the temp folder, named after the workspace path.
+# Where a workspace's interpreter, venv, build output and run folders live: outside the workspace,
+# under the temp folder, named after the workspace path. Under a sandbox the temp folder belongs
+# to one launch, so a later process rebuilds what it needs from the workspace's records.
 SCRATCH_PREFIX = "nanoagent-dep-upgrade-"
-# Scratch folders of other workspaces untouched for this long are removed, best effort.
 PRUNE_AFTER = 12 * 3600
 # The plugin's own folder: never shown in an output (see scrub).
 PLUGIN_ROOT = Path(__file__).resolve().parents[2]
@@ -97,17 +95,12 @@ def confine(root: Path, rel: str, *, allow_judge: bool = False) -> Path:
     return resolved
 
 
-def project_root(workspace: Path, project: str) -> Path:
-    return workspace.resolve() / WORKSPACE_PREFIX / project
+def project_root(workspace: Path, instance: str) -> Path:
+    return workspace.resolve() / WORKSPACE_PREFIX / instance
 
 
 def workspace_relative(workspace: Path, path: Path) -> str:
     return path.resolve().relative_to(workspace.resolve()).as_posix()
-
-
-def is_protected(rel: str) -> bool:
-    """Whether the project-relative path ``rel`` is one the task may not change."""
-    return rel == "README.md" or rel.split("/", 1)[0] == "tests"
 
 
 # ----- the scratch folder outside the workspace -----
@@ -115,14 +108,19 @@ def is_protected(rel: str) -> bool:
 
 def scratch_home(workspace: Path) -> Path:
     """``<tmp>/nanoagent-dep-upgrade-<sha256 of the workspace path>``: the one folder outside the
-    workspace this plugin writes to (venvs, wheels, run folders, HOME). Under the macOS sandbox
-    the temp folder is the sandbox home; on the hosted runner it is /tmp."""
+    workspace this plugin writes to."""
     digest = hashlib.sha256(str(workspace.resolve()).encode("utf-8")).hexdigest()
     return Path(tempfile.gettempdir()).resolve() / f"{SCRATCH_PREFIX}{digest}"
 
 
+def scratch_for(workspace: Path, instance: str) -> Path:
+    folder = scratch_home(workspace) / instance
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
 def oversized(root: Path, limit: int = MAX_WORKSPACE_FILE) -> list[tuple[str, int]]:
-    """``(relative path, bytes)`` of every file under ``root`` over ``limit``, every folder included."""
+    """``(relative path, bytes)`` of every file under ``root`` over ``limit``."""
     found: list[tuple[str, int]] = []
     for path in sorted(root.rglob("*")):
         if path.is_symlink() or not path.is_file():
@@ -188,9 +186,8 @@ class Budget:
         return max(1.0, min(most, self.left - keep))
 
 
-def load_progress(root: Path) -> dict:
-    """The project's progress record (``.judge/progress.json``), or {}."""
-    path = root / JUDGE_DIR / PROGRESS
+def load_json(path: Path) -> dict:
+    """A JSON object from ``path``, or {} when it is missing or unreadable."""
     if not path.is_file():
         return {}
     try:
@@ -200,10 +197,20 @@ def load_progress(root: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def write_json(path: Path, data: dict) -> str:
+    """Write ``data`` as indented, sorted JSON; returns the text written."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(data, indent=1, sort_keys=True, ensure_ascii=False) + "\n"
+    path.write_text(text, encoding="utf-8")
+    return text
+
+
+def load_progress(root: Path) -> dict:
+    return load_json(root / JUDGE_DIR / PROGRESS)
+
+
 def save_progress(root: Path, data: dict) -> None:
-    folder = root / JUDGE_DIR
-    folder.mkdir(parents=True, exist_ok=True)
-    (folder / PROGRESS).write_text(json.dumps(data, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    write_json(root / JUDGE_DIR / PROGRESS, data)
 
 
 # ----- subprocesses -----
@@ -248,12 +255,12 @@ def run(cmd: Sequence[str], *, cwd: Path, env: dict[str, str], timeout: float, t
     lines = output.decode("utf-8", errors="replace").splitlines()
     kept = [line[:MAX_LINE] for line in lines[-tail:]] if tail else []
     if timed_out:
-        kept.append(f"[stopped after {timeout:.0f} s; call again to continue]")
+        kept.append(f"[stopped after {timeout:.0f} s]")
     return Completed(code=process.returncode, tail=kept, seconds=seconds, timed_out=timed_out)
 
 
 def clean_env(home: Path, *, extra: dict[str, str] | None = None) -> dict[str, str]:
-    """A deterministic environment for git, uv and Python: no user config, no index overrides, no
+    """A deterministic environment for uv and Python: no user config, no index overrides, no
     warnings filters, no offline mode; the host's proxy and cache settings pass through."""
     home.mkdir(parents=True, exist_ok=True)
     tmp = home / "tmp"
@@ -276,9 +283,6 @@ def clean_env(home: Path, *, extra: dict[str, str] | None = None) -> dict[str, s
         "UV_NO_PROGRESS": "1",
         "UV_PYTHON_DOWNLOADS": "never",
         "UV_NO_CONFIG": "1",
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-        "GIT_CONFIG_NOSYSTEM": "1",
-        "GIT_TERMINAL_PROMPT": "0",
     }
     for name in PASSTHROUGH_ENV:
         if os.environ.get(name):
@@ -310,35 +314,3 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1 << 16), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def tree_entries(root: Path, *, keep: Callable[[str], bool] | None = None) -> list[tuple[str, str]]:
-    """``(relative path, sha256)`` of every regular file under ``root``, sorted, skipping
-    :data:`HASH_SKIP` folders, ``.pyc`` files and symlinks; ``keep`` narrows it further."""
-    entries: list[tuple[str, str]] = []
-    for path in sorted(root.rglob("*")):
-        relative = path.relative_to(root)
-        if HASH_SKIP & set(relative.parts) or path.suffix == ".pyc":
-            continue
-        if path.is_symlink() or not path.is_file():
-            continue
-        rel = relative.as_posix()
-        if keep is not None and not keep(rel):
-            continue
-        entries.append((rel, sha256_file(path)))
-    return entries
-
-
-def tree_hash(entries: Iterable[tuple[str, str]]) -> str:
-    """sha256 over sorted ``"<path>\\0<sha256>\\n"`` lines: the same rule the verifier applies."""
-    digest = hashlib.sha256()
-    for rel, sha in sorted(entries):
-        digest.update(f"{rel}\0{sha}\n".encode())
-    return digest.hexdigest()
-
-
-def tail_of(path: Path, lines: int = TAIL_LINES) -> list[str]:
-    try:
-        return [line[:MAX_LINE] for line in path.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:]]
-    except OSError:
-        return []

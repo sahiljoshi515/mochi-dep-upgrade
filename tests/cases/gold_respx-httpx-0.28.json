@@ -1,0 +1,70 @@
+{
+ "note": "Upstream's own change (https://github.com/lundberg/respx/commit/179c65131b16e895e9da0e2d629aab3db6a97694) as exact replacements: valid on every check.",
+ "task": "upgrade-dependency",
+ "arguments": {
+  "instance": "respx-httpx-0.28"
+ },
+ "steps": [
+  {
+   "tool": "start_upgrade",
+   "arguments": {
+    "instance": "respx-httpx-0.28"
+   },
+   "save_as": "start"
+  },
+  {
+   "tool": "edit_file",
+   "arguments": {
+    "edits": [
+     {
+      "path": "dep-upgrade/respx-httpx-0.28/setup.py",
+      "old": "httpx>=0.25.0,<0.28.0",
+      "new": "httpx>=0.25.0"
+     },
+     {
+      "path": "dep-upgrade/respx-httpx-0.28/respx/mocks.py",
+      "old": "            request.method,\n",
+      "new": "            method,\n"
+     },
+     {
+      "path": "dep-upgrade/respx-httpx-0.28/respx/mocks.py",
+      "old": "        request = kwargs[\"request\"]\n        raw_url = (\n",
+      "new": "        request = kwargs[\"request\"]\n        method = (\n            request.method.decode(\"ascii\")\n            if isinstance(request.method, bytes)\n            else request.method\n        )\n        raw_url = (\n"
+     }
+    ],
+    "then": "sync_and_test"
+   },
+   "save_as": "edited"
+  },
+  {
+   "tool": "judge",
+   "arguments": {
+    "instance": "respx-httpx-0.28"
+   },
+   "save_as": "judged"
+  },
+  {
+   "tool": "submit",
+   "arguments": {
+    "instance": "respx-httpx-0.28",
+    "dependency": "httpx",
+    "from_version": "0.27.2",
+    "to_version": "0.28.1",
+    "requirement": "httpx>=0.25.0",
+    "changed_files": [
+     "respx/mocks.py",
+     "setup.py"
+    ],
+    "migration": [
+     "Raised httpx to admit 0.28.1 in setup.py",
+     "Migrated respx/mocks.py to the httpx 0.28.1 API"
+    ]
+   }
+  }
+ ],
+ "answer": "Upgraded, judged and submitted.",
+ "expect": {
+  "valid": true,
+  "score_min": 1.0
+ }
+}

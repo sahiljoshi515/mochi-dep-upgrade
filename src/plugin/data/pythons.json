@@ -1,0 +1,35 @@
+{
+ "pythons": {
+  "3.11": {
+   "linux-x86_64": {
+    "sha256": "7086a336e6ea0a49595cf891066ab6517156c85116f77fbc23b62c1d9e9b7d92",
+    "url": "https://releases.astral.sh/github/python-build-standalone/releases/download/20261001/cpython-3.11.17%2B20261001-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+   },
+   "macos-arm64": {
+    "sha256": "7fa8ccd24b93b2feacd08bfc4d2b2d0f5864a0105d90919c0644042ff9f2219d",
+    "url": "https://releases.astral.sh/github/python-build-standalone/releases/download/20261001/cpython-3.11.17%2B20261001-aarch64-apple-darwin-install_only_stripped.tar.gz"
+   },
+   "macos-x86_64": {
+    "sha256": "7db03f4cc322f4cd0ad8fc71fecee6e474226e3fc5a0d60e042f61220f6f6da6",
+    "url": "https://releases.astral.sh/github/python-build-standalone/releases/download/20261001/cpython-3.11.17%2B20261001-x86_64-apple-darwin-install_only_stripped.tar.gz"
+   },
+   "version": "3.11.17"
+  },
+  "3.12": {
+   "linux-x86_64": {
+    "sha256": "7bb1659e3235077b7f63d5b6eb6ce653c6fcd6c5041e9d5f73b42ce10421464d",
+    "url": "https://releases.astral.sh/github/python-build-standalone/releases/download/20261001/cpython-3.12.15%2B20261001-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+   },
+   "macos-arm64": {
+    "sha256": "10cab8f6ed6202fdd81637aa6eda4af8d5b7eaa8fc42f9df3c6bea4923de0d93",
+    "url": "https://releases.astral.sh/github/python-build-standalone/releases/download/20261001/cpython-3.12.15%2B20261001-aarch64-apple-darwin-install_only_stripped.tar.gz"
+   },
+   "macos-x86_64": {
+    "sha256": "d101ac54bc34afff54741406261325dc896b7b646a36a58fff4845ef0a00b2ce",
+    "url": "https://releases.astral.sh/github/python-build-standalone/releases/download/20261001/cpython-3.12.15%2B20261001-x86_64-apple-darwin-install_only_stripped.tar.gz"
+   },
+   "version": "3.12.15"
+  }
+ },
+ "release": "20261001"
+}

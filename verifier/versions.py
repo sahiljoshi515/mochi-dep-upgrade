@@ -153,3 +153,13 @@ def parse_requirement(text):
         url=url,
         text=original.strip(),
     )
+
+
+def requirement_key(text):
+    """A requirement as a comparable key: canonical name, sorted extras, its clauses as a sorted
+    tuple, its marker with spacing and quotes normalized, its URL. Two spellings of one
+    requirement (``a>=1,<2`` and ``A <2, >=1``) give the same key."""
+    requirement = parse_requirement(text)
+    clauses = tuple(sorted(clause for clause in requirement.specifier.split(",") if clause))
+    marker = re.sub(r"\s+", "", requirement.marker).replace("'", '"')
+    return (requirement.name, requirement.extras, clauses, marker, requirement.url)

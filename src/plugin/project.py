@@ -1,351 +1,251 @@
-"""The reference pin of a project, the project's environment outside the workspace, and setting a
-project up in the workspace (resumably)."""
+"""The answer key (``pin_upgrade``) and setting an instance up in the workspace (``start_upgrade``):
+the upstream repository at the commit before its upgrade, from GitHub's codeload, checked against
+the tree hash the catalog validated; its pristine record; and its pre-upgrade environment.
+
+Each process starts an instance afresh (a folder left by an earlier run is replaced); calling start
+again in the same run returns the same answer, after rebuilding the environment if needed.
+"""
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import re
+import secrets
 import shutil
-import sys
-import tomllib
 from pathlib import Path
 
 from slimconfig import build_output, plain_output
 
-from contract import PinOutput, StartOutput, UpgradeInput
+from contract import Breaking, PinOutput, PypiFile, StartOutput, UpgradeInput
+from plugin import envs, fetch
 from plugin.common import (
     JUDGE_DIR,
-    TOOL_DIRS,
     Budget,
     ToolError,
     check_workspace_sizes,
-    clean_env,
-    is_protected,
+    load_json,
     load_progress,
     project_root,
     prune_scratch,
-    run,
     save_progress,
+    scratch_for,
     scratch_home,
     sha256_bytes,
-    tree_entries,
-    tree_hash,
-    uv,
+    write_json,
 )
-from plugin.instances import Instance, load_instance
-from verifier.pyproject import blank_dependencies, dependencies, requires_python
-from verifier.versions import canonical_name, parse_requirement
+from plugin.spec import read as read_spec
+from verifier import catalog
+from verifier.trees import counts, matches_any, tree_entries, tree_hash
 
 READY = "ready.json"
-INSTALLED_MARK = ".nanoagent-installed"
-GIT_EXCLUDE = "\n".join([".venv/", JUDGE_DIR + "/", "__pycache__/", "*.pyc", ".pytest_cache/", "dist/", "build/", "*.egg-info/", ""])
-MAX_LAYOUT = 40
+PRISTINE = "pristine.json"
+PRISTINE_DIR = "pristine"
+LOCK = "requirements.lock"
+JUDGEMENT = "judgement.json"
 MAX_USES = 20
-VENV_TIMEOUT = 60.0
-INSTALL_TIMEOUT = 130.0
-# How a distribution is imported, when the name differs or the dash becomes an underscore.
-IMPORT_NAMES = {"pydantic-settings": "pydantic_settings", "sqlalchemy": "sqlalchemy", "markupsafe": "markupsafe"}
+MAX_BREAKING = 10
+MAX_EXCLUDED = 20
+# One per plugin process: a project whose ready record carries another run's mark is started afresh.
+RUN = secrets.token_hex(8)
 
 
-def direct_dependency_names(data: dict) -> list[str]:
-    """Every direct dependency of a pyproject: ``[project] dependencies``, its optional
-    dependencies and every dependency group, canonical and without the project itself."""
-    names: list[str] = []
-    project = data.get("project", {})
-    sources = [project.get("dependencies", [])]
-    sources += list(project.get("optional-dependencies", {}).values())
-    sources += list(data.get("dependency-groups", {}).values())
-    for group in sources:
-        for entry in group:
-            if isinstance(entry, str):
-                name = parse_requirement(entry).name
-                if name not in names:
-                    names.append(name)
-    return names
+def entry_for(instance: str) -> dict:
+    try:
+        return catalog.entry(instance)
+    except ValueError as error:
+        raise ToolError(str(error)) from error
 
 
-def locked_versions(lock_text: str) -> dict[str, str]:
-    data = tomllib.loads(lock_text)
-    return {canonical_name(package["name"]): package.get("version", "") for package in data.get("package", [])}
+def editable_globs(entry: dict) -> list[str]:
+    return [entry["spec"]["file"], *entry["source_globs"]]
 
 
-def pin_project(given: UpgradeInput, workspace: Path) -> PinOutput:
-    """What the verifier holds the task to: the pristine project's hashes, requirements and lock,
-    the target, and the hidden tests' identity. Reads only the plugin's own copy."""
-    inst = load_instance(given.project.value)
-    project = inst.project_dir
-    pyproject_text = (project / "pyproject.toml").read_text(encoding="utf-8")
-    data = tomllib.loads(pyproject_text)
-    written = dependencies(pyproject_text)
-    if written != data["project"]["dependencies"]:
-        raise ToolError("the pristine pyproject.toml dependencies do not read back the same way twice")
-    python = requires_python(pyproject_text)
-    if python != data["project"].get("requires-python", ""):
-        raise ToolError("the pristine pyproject.toml requires-python does not read back")
-    locked = locked_versions((project / "uv.lock").read_text(encoding="utf-8"))
-    dependency = canonical_name(inst.dependency)
-    if locked.get(dependency) != inst.from_version:
-        raise ToolError(f"the pristine lock holds {inst.dependency} {locked.get(dependency)!r}, not {inst.from_version}")
-    from_spec = next((entry for entry in written if parse_requirement(entry).name == dependency), None)
-    if from_spec is None:
-        raise ToolError(f"the pristine pyproject.toml does not require {inst.dependency}")
-    others = {}
-    for name in direct_dependency_names(data):
-        if name == dependency:
-            continue
-        if name not in locked:
-            raise ToolError(f"the pristine lock holds no version of {name}")
-        others[name] = locked[name]
-    entries = tree_entries(project)
-    hidden = tree_entries(inst.hidden_dir)
-    if not hidden:
-        raise ToolError("the project has no hidden tests")
+def is_editable(entry: dict, rel: str) -> bool:
+    return matches_any(rel, editable_globs(entry))
+
+
+def pin_upgrade(given: UpgradeInput, workspace: Path) -> PinOutput:
+    """The answer key: the catalog entry's hash, what PyPI serves for the target release right now
+    (it must still be the files the instance was validated with), and any judgement already in
+    the workspace (a run must judge afresh)."""
+    entry = entry_for(given.instance.value)
+    release = fetch.pypi_release(entry["dependency"], entry["target_version"])
+    expected = sorted((item["filename"], item["sha256"]) for item in entry["target_files"])
+    served = sorted((item["filename"], item["sha256"]) for item in release["files"])
+    if served != expected:
+        raise ToolError(f"PyPI no longer serves {entry['dependency']} {entry['target_version']} as validated: the files or their sha256 differ")
+    if release["yanked"]:
+        raise ToolError(f"PyPI marks {entry['dependency']} {entry['target_version']} yanked")
+    judgement = project_root(workspace, entry["id"]) / JUDGE_DIR / JUDGEMENT
+    prior = sha256_bytes(judgement.read_bytes()) if judgement.is_file() else ""
     return PinOutput(
-        project=given.project,
-        dependency=inst.dependency,
-        package=inst.package,
-        from_spec=from_spec,
-        from_version=inst.from_version,
-        target_version=inst.target_version,
-        requires_python=python,
-        pristine_tree_sha256=tree_hash(entries),
-        protected_tree_sha256=tree_hash(entry for entry in entries if is_protected(entry[0])),
-        pyproject_sha256=sha256_bytes(pyproject_text.encode("utf-8")),
-        pyproject_rest_sha256=sha256_bytes(blank_dependencies(pyproject_text).encode("utf-8")),
-        pristine_dependencies=list(written),
-        other_dependencies=others,
-        allowed_new_dependencies=list(inst.allowed_new_dependencies),
-        allowed_collateral=list(inst.allowed_collateral),
-        forbidden_patterns=list(inst.forbidden_patterns),
-        hidden_tests_sha256=tree_hash(hidden),
-        hidden_test_ids=list(inst.hidden_test_ids),
-        max_new_files=inst.max_new_files,
-        max_added_lines=inst.max_added_lines,
+        instance=given.instance,
+        catalog_sha256=catalog.entry_sha256(entry),
+        dependency=entry["dependency"],
+        from_version=entry["from_version"],
+        target_version=entry["target_version"],
+        pypi_files=[PypiFile(filename=name, sha256=sha) for name, sha in served],
+        pypi_yanked=release["yanked"],
+        prior_judgement_sha256=prior,
     )
 
 
-def rules_for(inst: Instance) -> list[str]:
-    collateral = ", ".join(inst.allowed_collateral) or "none"
-    new = ", ".join(inst.allowed_new_dependencies) or "none"
+def rules_for(entry: dict) -> list[str]:
+    limits = entry["limits"]
+    spec = entry["spec"]
+    moving = ", ".join(entry.get("allowed_collateral", []) + entry.get("allowed_new", [])) or "none"
+    exclude = f" and exclude {entry['from_version']}" if spec.get("must_exclude_old") else ""
     return [
+        f"Goal: {entry['dependency']} {entry['from_version']} -> exactly {entry['target_version']}, with the project building and its tests passing on the new version.",
         (
-            f"Goal: {inst.dependency} {inst.from_version} -> exactly {inst.target_version}, with the project building and "
-            "every test passing on the new version."
+            f"Only these may change: the requirements in {spec['file']} and source files matching "
+            f"{', '.join(entry['source_globs'])} (at most {limits['max_changed_files']} files, {limits['max_new_files']} new, "
+            f"{limits['max_added_lines']} added lines). Tests, docs and every other file are read-only."
         ),
         (
-            "You may change only the [project] dependencies array of pyproject.toml and .py files under "
-            f"src/{inst.package}/ (at most {inst.max_new_files} new files, {inst.max_added_lines} added lines). "
-            "tests/, README.md and uv.lock are read-only; sync rewrites uv.lock."
+            f"Raise {entry['dependency']}'s requirement so it admits {entry['target_version']}{exclude}; sync resolves the spec as of "
+            f"{entry['resolution_date'][:10]} with every other package held, and must lock exactly {entry['target_version']}. "
+            f"Keep the other requirements as written; packages that may move with the upgrade: {moving}."
         ),
+        "No shims: no warning filters, no monkeypatching or re-exporting the library's old API, no sys.modules tricks, no version or test sniffing; migrate the code to the new API.",
         (
-            f"Raise {inst.dependency}'s requirement so that uv locks exactly {inst.target_version} (for example "
-            f"{inst.dependency}=={inst.target_version}). Other requirements stay as written, except that these may change: "
-            f"{collateral}. Requirements you may add: {new}. requires-python stays."
+            f"Judging runs the repository's own tests ({len(entry['public']['ids'])} judged, {len(entry['public']['excluded'])} excluded as failing for "
+            "reasons of their own) and hidden tests: upstream's own tests after its upgrade. It also re-locks, installs and builds the wheel."
         ),
-        (
-            "No shims: no compatibility layers of the old API, no warning filters, no monkeypatching the library, no "
-            "test-sniffing; migrate the code to the new API."
-        ),
-        "Tests run with warnings as errors: " + " ".join(inst.warning_flags) + ". Deprecated calls count as failures.",
-        (
-            "judge rebuilds the wheel, re-runs the public tests from a pristine copy and runs hidden tests that use the "
-            "package the same way the public ones do, then records the result. Call it last, after sync; call it again "
-            "if it returns complete: false."
-        ),
-        *inst.notes,
+        "edit_file (exact old -> new replacements) with then: sync_and_test shows what is left; call judge after your last change, then submit in the same step.",
     ]
 
 
-def ready_root(workspace: Path, project: str) -> tuple[Path, Instance]:
-    inst = load_instance(project)
-    root = project_root(workspace, inst.id)
-    if not (root / JUDGE_DIR / READY).is_file():
-        raise ToolError(f"start_project {inst.id} first")
-    return root, inst
-
-
-# ----- the project's environment, outside the workspace -----
-
-
-def scratch_for(workspace: Path, project: str) -> Path:
-    """The project's folder in the workspace's scratch home (venv, wheels, run folders)."""
-    folder = scratch_home(workspace) / project
-    folder.mkdir(parents=True, exist_ok=True)
-    return folder
-
-
-def venv_dir(workspace: Path, project: str) -> Path:
-    return scratch_for(workspace, project) / ".venv"
-
-
-def venv_python(workspace: Path, project: str) -> Path:
-    return venv_dir(workspace, project) / "bin" / "python"
-
-
-def project_env(workspace: Path, project: str, *, with_python: bool = True) -> dict[str, str]:
-    """The environment uv, git and Python run in for ``project``: HOME and TMPDIR in the scratch
-    home, the project environment pointed at the venv there."""
-    venv = venv_dir(workspace, project)
-    extra = {"UV_PROJECT_ENVIRONMENT": str(venv)}
-    if with_python and (venv / "bin" / "python").exists():
-        extra["UV_PYTHON"] = str(venv / "bin" / "python")
-    return clean_env(scratch_home(workspace) / "home", extra=extra)
-
-
-def ensure_venv(workspace: Path, root: Path, inst: Instance, budget: Budget) -> str | None:
-    """Make sure the project's venv exists outside the workspace with the workspace's lock
-    installed (a later process finds the scratch folder empty and rebuilds it). Returns None when
-    it is ready, or what to do when the budget ran out first."""
-    venv = venv_dir(workspace, inst.id)
-    mark = venv / INSTALLED_MARK
-    if mark.is_file():
-        return None
-    if not budget.allows(20):
-        return "call again to rebuild the project's environment"
-    if not (venv / "bin" / "python").exists():
-        if venv.exists():
-            shutil.rmtree(venv, ignore_errors=True)
-        made = run([uv(), "venv", "-q", "--python", sys.executable, str(venv)], cwd=root, env=project_env(workspace, inst.id, with_python=False), timeout=budget.slice(VENV_TIMEOUT))
-        if made.timed_out:
-            shutil.rmtree(venv, ignore_errors=True)
-            return "call again to continue rebuilding the project's environment"
-        if not made.ok:
-            raise ToolError("could not create the project's environment: " + " ".join(made.tail[-3:]))
-    if not budget.allows(15):
-        return "call again to install the project's environment"
-    synced = run([uv(), "sync", "--frozen"], cwd=root, env=project_env(workspace, inst.id), timeout=budget.slice(INSTALL_TIMEOUT))
-    if synced.timed_out:
-        return "call again to continue installing the project's environment"
-    if not synced.ok:
-        raise ToolError("could not install the project's locked environment: " + " | ".join(synced.tail[-6:]))
-    mark.write_text("installed from uv.lock\n", encoding="utf-8")
-    return None
-
-
-def installed_versions(python: Path, names: list[str], env: dict[str, str]) -> dict[str, str]:
-    """Each distribution's version installed in the venv at ``python``, '' when it is missing."""
-    if not python.exists():
-        return {name: "" for name in names}
-    script = (
-        "import importlib.metadata as m, json, sys\n"
-        "out = {}\n"
-        "for name in json.loads(sys.argv[1]):\n"
-        "    try:\n"
-        "        out[name] = m.version(name)\n"
-        "    except m.PackageNotFoundError:\n"
-        "        out[name] = ''\n"
-        "print(json.dumps(out))\n"
-    )
-    found = run([str(python), "-I", "-c", script, json.dumps(names)], cwd=python.parent, env=env, timeout=30, tail=5)
-    if not found.ok or not found.tail:
-        return {name: "" for name in names}
-    try:
-        return json.loads(found.tail[-1])
-    except json.JSONDecodeError:
-        return {name: "" for name in names}
-
-
-def layout_of(root: Path) -> list[str]:
-    return [rel for rel, _ in tree_entries(root)][:MAX_LAYOUT]
-
-
-def uses_of(root: Path, inst: Instance) -> list[str]:
-    """The project's source files that import the dependency or one of its collateral packages."""
-    modules = [inst.import_name] + [IMPORT_NAMES.get(name, name.replace("-", "_")) for name in inst.allowed_collateral]
-    pattern = re.compile(r"^\s*(?:import|from)\s+(?:" + "|".join(re.escape(module) for module in modules) + r")\b", re.MULTILINE)
+def uses_of(root: Path, entry: dict) -> list[str]:
+    """``path:line`` where the source imports the dependency."""
+    names = "|".join(re.escape(name) for name in entry["import_names"])
+    pattern = re.compile(rf"^\s*(?:import|from)\s+(?:{names})\b")
     found = []
-    src = root / "src"
-    for path in sorted(src.rglob("*.py")) if src.is_dir() else []:
-        if TOOL_DIRS & set(path.relative_to(root).parts):
+    for rel, _ in tree_entries(root):
+        if not rel.endswith(".py") or not matches_any(rel, entry["source_globs"]):
             continue
-        try:
-            if pattern.search(path.read_text(encoding="utf-8", errors="replace")):
-                found.append(path.relative_to(root).as_posix())
-        except OSError:
-            continue
-    return found[:MAX_USES]
+        for number, line in enumerate((root / rel).read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if pattern.match(line):
+                found.append(f"{rel}:{number}")
+                if len(found) >= MAX_USES:
+                    return found
+    return found
 
 
-def _start_output(root: Path, inst: Instance, *, complete: bool, next_step: str, current: str) -> StartOutput:
+def fit_note(entry: dict) -> str:
+    timing = entry.get("timings", {})
+    seconds = timing.get("tool_seconds")
+    measured = f" (about {seconds:.0f} s of tool time measured)" if isinstance(seconds, (int, float)) else ""
+    if entry.get("fit") == "hosted":
+        return f"Fits a hosted run{measured}: start, one edit with sync_and_test, then judge and submit together."
+    return f"Local runner only{measured}: set-up and judging take longer than a hosted run allows; run it where tool calls may take minutes."
+
+
+def _start_output(root: Path, entry: dict, *, complete: bool, next_step: str, current: str) -> StartOutput:
+    spec_file = entry["spec"]["file"]
+    requirements, _ = read_spec(entry["spec"]["kind"], (root / spec_file).read_text(encoding="utf-8"), name=spec_file)
     return StartOutput(
-        root=f"dep-upgrade/{inst.id}",
+        root=f"dep-upgrade/{entry['id']}",
         complete=complete,
         next=next_step,
-        dependency=inst.dependency,
+        repository=entry["repo"],
+        dependency=entry["dependency"],
         current_version=current,
-        target_version=inst.target_version,
-        package=inst.package,
-        uses_dependency=uses_of(root, inst),
-        layout=layout_of(root),
-        allowed_new_dependencies=list(inst.allowed_new_dependencies),
-        allowed_collateral=list(inst.allowed_collateral),
-        rules=rules_for(inst),
-        build_hint=inst.build_hint,
-        test_hint=inst.test_hint,
+        target_version=entry["target_version"],
+        spec_file=spec_file,
+        current_requirement=envs.dependency_requirement(entry, requirements),
+        editable=editable_globs(entry),
+        uses=uses_of(root, entry),
+        breaking=[Breaking(test=item["test"], error=item["error"]) for item in entry.get("breaking", [])[:MAX_BREAKING]],
+        excluded_tests=[item["id"] for item in entry["public"]["excluded"]][:MAX_EXCLUDED],
+        python=entry["python"],
+        fit=entry.get("fit", "local"),
+        fit_note=fit_note(entry),
+        rules=rules_for(entry),
     )
 
 
-def start_project(given: UpgradeInput, workspace: Path, *, budget: Budget | None = None) -> StartOutput:
-    """Copy the project into ``dep-upgrade/<project>/``, commit it, and create its venv outside the
-    workspace with the locked environment installed. Resumable: each stage is recorded in
-    ``.judge/progress.json``; a call that runs out of budget returns ``complete: false`` and the
-    next call carries on. A finished project is returned as is (its environment rebuilt first when
-    a later process finds it missing)."""
-    budget = budget or Budget()
-    inst = load_instance(given.project.value)
-    root = project_root(workspace, inst.id)
+def ready_root(workspace: Path, instance: str) -> tuple[Path, dict]:
+    """The instance's root and catalog entry, once start_upgrade finished in this run."""
+    entry = entry_for(instance)
+    root = project_root(workspace, entry["id"])
+    ready = load_json(root / JUDGE_DIR / READY)
+    if not ready or ready.get("run") != RUN:
+        raise ToolError(f"start_upgrade {entry['id']} first (set-up is per run)")
+    return root, entry
+
+
+def current_lock(root: Path) -> str:
+    path = root / JUDGE_DIR / LOCK
+    if not path.is_file():
+        raise ToolError("the project has no lock: start_upgrade it again")
+    return path.read_text(encoding="utf-8")
+
+
+def ensure_env(workspace: Path, root: Path, entry: dict, budget: Budget) -> str | None:
+    """The scratch venv with the workspace's current lock installed (rebuilt when missing)."""
+    return envs.ensure_venv(entry, scratch_for(workspace, entry["id"]), current_lock(root), budget)
+
+
+def _fresh_checkout(root: Path, entry: dict) -> None:
+    """The repository at the commit before the upgrade, checked against the validated tree hash,
+    with its pristine record: the manifest and a copy of every editable file."""
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir(parents=True)
+    data = fetch.codeload(entry["repo"], entry["base"]["commit"])
+    fetch.unpack(data, root, keep=counts)
+    entries = tree_entries(root)
+    if tree_hash(entries) != entry["base"]["tree_sha256"]:
+        shutil.rmtree(root)
+        raise ToolError(f"GitHub served a different tree for {entry['repo']}@{entry['base']['commit'][:12]} than the one validated")
     judge_dir = root / JUDGE_DIR
-    ready = judge_dir / READY
-    if ready.is_file():
-        output = build_output(json.loads(ready.read_text(encoding="utf-8")), StartOutput)
-        note = ensure_venv(workspace, root, inst, budget)
-        if note:
-            return dataclasses.replace(output, complete=False, next=note)
-        return output
+    write_json(judge_dir / PRISTINE, {"instance": entry["id"], "tree_sha256": tree_hash(entries), "files": dict(entries)})
+    for rel, _ in entries:
+        if is_editable(entry, rel):
+            copy = judge_dir / PRISTINE_DIR / rel
+            copy.parent.mkdir(parents=True, exist_ok=True)
+            copy.write_bytes((root / rel).read_bytes())
+    (judge_dir / LOCK).write_text(catalog.lock_text(entry, "base"), encoding="utf-8")
+
+
+def start_upgrade(given: UpgradeInput, workspace: Path, *, budget: Budget | None = None) -> StartOutput:
+    """Check the repository out at the commit before its upgrade and install its pre-upgrade
+    environment outside the workspace. Resumable: a call that runs out of budget returns
+    ``complete: false`` and the next call carries on."""
+    budget = budget or Budget()
+    entry = entry_for(given.instance.value)
+    root = project_root(workspace, entry["id"])
+    judge_dir = root / JUDGE_DIR
+    ready = load_json(judge_dir / READY)
+    if ready.get("run") == RUN:
+        output = build_output(ready["output"], StartOutput)
+        note = ensure_env(workspace, root, entry, budget)
+        return output if note is None else _start_output(root, entry, complete=False, next_step=note, current="")
     progress = load_progress(root) if root.exists() else {}
-    stage = progress.get("start", {}) if isinstance(progress.get("start"), dict) else {}
-    if not stage.get("copied"):
-        if root.exists():
-            shutil.rmtree(root)
-        root.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(inst.project_dir, root, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".pytest_cache", ".venv"))
-        judge_dir.mkdir()
-        stage = {"copied": True}
-        progress = {"start": stage}
+    if progress.get("run") != RUN or not progress.get("checked_out"):
+        _fresh_checkout(root, entry)
+        progress = {"run": RUN, "checked_out": True}
         save_progress(root, progress)
-    progress["start"] = stage
-    progress["environment"] = f"outside the workspace, in {scratch_home(workspace).name}/{inst.id}/.venv (rebuilt from uv.lock when missing)"
-
-    def pause(note: str) -> StartOutput:
-        save_progress(root, progress)
-        return _start_output(root, inst, complete=False, next_step=note, current="")
-
-    if not stage.get("committed"):
-        if (root / ".git").exists():
-            shutil.rmtree(root / ".git")
-        env = project_env(workspace, inst.id, with_python=False)
-        git = ["git", "-c", "user.name=nanoagent", "-c", "user.email=nanoagent@example.invalid", "-c", "commit.gpgsign=false"]
-        for step in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "pristine project"]):
-            done = run([*git, *step], cwd=root, env=env, timeout=30)
-            if not done.ok:
-                raise ToolError(f"git {step[0]} failed: {' '.join(done.tail[-3:])}")
-        (root / ".git" / "info").mkdir(exist_ok=True)
-        (root / ".git" / "info" / "exclude").write_text(GIT_EXCLUDE, encoding="utf-8")
-        stage["committed"] = True
-        save_progress(root, progress)
-
-    note = ensure_venv(workspace, root, inst, budget)
+    note = ensure_env(workspace, root, entry, budget)
     if note:
-        return pause(note)
-    stage["installed"] = True
-    save_progress(root, progress)
-
-    current = installed_versions(venv_python(workspace, inst.id), [inst.dependency], project_env(workspace, inst.id))[inst.dependency]
-    if current != inst.from_version:
-        raise ToolError(f"the environment holds {inst.dependency} {current!r}, expected {inst.from_version}")
+        save_progress(root, progress)
+        return _start_output(root, entry, complete=False, next_step=note, current="")
+    scratch = scratch_for(workspace, entry["id"])
+    current = envs.installed_versions(scratch, [entry["dependency"]])[entry["dependency"]]
+    if current != entry["from_version"]:
+        raise ToolError(f"the environment holds {entry['dependency']} {current!r}, expected {entry['from_version']}")
     check_workspace_sizes(root)
-    output = _start_output(root, inst, complete=True, next_step="", current=current)
-    ready.write_text(json.dumps(plain_output(output), indent=1) + "\n", encoding="utf-8")
+    output = _start_output(root, entry, complete=True, next_step="", current=current)
+    write_json(judge_dir / READY, {"run": RUN, "setup_token": secrets.token_hex(16), "output": plain_output(output)})
+    (judge_dir / JUDGEMENT).unlink(missing_ok=True)
     prune_scratch(scratch_home(workspace))
     return output
+
+
+def setup_token(root: Path) -> str:
+    return str(load_json(root / JUDGE_DIR / READY).get("setup_token", ""))
+
+
+def ready_record(root: Path) -> dict:
+    return json.loads((root / JUDGE_DIR / READY).read_text(encoding="utf-8"))

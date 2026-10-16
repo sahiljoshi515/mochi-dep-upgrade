@@ -1,13 +1,13 @@
 _ > nanoagent.plugin.manifest.ProductConfig:
-tagline: "Upgrade one library to its target version and keep the project building and passing"
-summary: "Pick a small Python project pinned to an old major of a real library (pydantic, SQLAlchemy, Flask, pandas or NumPy). The agent raises that one dependency to the target version and migrates the code; a judge rebuilds the wheel and runs the public and hidden tests, and a verifier checks the lock, the diff and every result. A full upgrade takes more than the 6 steps Mochi's hosted runner allows, so run it on your own computer with Mochi Lab or a local NanoAgent."
+tagline: "Redo a real project's upgrade to a library's new major, checked against upstream's own tests"
+summary: "Each instance is a real commit in which an open-source project upgraded one dependency (httpx, pydantic and more) and changed its code. The agent gets the repository from just before, with the old version installed, raises the requirement and migrates the code. A judge locks and installs exactly the target release from PyPI, builds the wheel, and runs the repository's tests and upstream's post-upgrade tests; a verifier checks 19 constraints, from PyPI's file hashes to shims in the added lines, and says which failed."
 highlights:
-  - "Real breaking changes: the old code fails on the new version until the API is migrated"
-  - "Hidden tests catch shims, warning filters and partial migrations"
-  - "Only the dependency and the package's own code may change; tests and the lock are protected"
-  - "Every verdict is recomputed from file hashes, the lock and the judge's record"
+  - "Real upgrades from GitHub, validated by an oracle: the old code must break on the new version, and upstream's change must fix it"
+  - "Hidden tests are upstream's own tests after its upgrade"
+  - "The lock must hold exactly the target with PyPI's published hashes; nothing else may move"
+  - "Every verdict lists all 19 checks in plain words"
 steps:
-  - "Pick a project (on a runner with more than 6 steps: your own computer running Mochi Lab, or NanoAgent locally)"
-  - "It installs the project as it is, then the agent re-locks and migrates the code"
-  - "The judge rebuilds and runs the public and hidden tests"
-  - "See the four checks, the changed files and the verdict"
+  - "Ask the chat to upgrade an instance, for example respx to httpx 0.28"
+  - "The agent checks the repository out, reads what breaks, and edits the requirement and the code"
+  - "The judge locks, installs, builds and runs the public and hidden tests"
+  - "See the checks, the migration notes and the diff"

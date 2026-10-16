@@ -1,0 +1,59 @@
+{
+ "note": "Only the requirement is raised; the source is not migrated, so the repository's and upstream's tests fail.",
+ "task": "upgrade-dependency",
+ "arguments": {
+  "instance": "respx-httpx-0.28"
+ },
+ "steps": [
+  {
+   "tool": "start_upgrade",
+   "arguments": {
+    "instance": "respx-httpx-0.28"
+   },
+   "save_as": "start"
+  },
+  {
+   "tool": "edit_file",
+   "arguments": {
+    "edits": [
+     {
+      "path": "dep-upgrade/respx-httpx-0.28/setup.py",
+      "old": "httpx>=0.25.0,<0.28.0",
+      "new": "httpx>=0.25.0"
+     }
+    ],
+    "then": "sync_and_test"
+   },
+   "save_as": "edited"
+  },
+  {
+   "tool": "judge",
+   "arguments": {
+    "instance": "respx-httpx-0.28"
+   },
+   "save_as": "judged"
+  },
+  {
+   "tool": "submit",
+   "arguments": {
+    "instance": "respx-httpx-0.28",
+    "dependency": "httpx",
+    "from_version": "0.27.2",
+    "to_version": "0.28.1",
+    "requirement": "httpx>=0.25.0",
+    "changed_files": [
+     "setup.py"
+    ],
+    "migration": [
+     "Raised httpx to admit 0.28.1 in setup.py",
+     "Migrated respx/mocks.py to the httpx 0.28.1 API"
+    ]
+   }
+  }
+ ],
+ "answer": "Upgraded, judged and submitted.",
+ "expect": {
+  "valid": false,
+  "message_contains": "test(s) did not pass"
+ }
+}

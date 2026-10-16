@@ -1,0 +1,870 @@
+{
+ "instances": [
+  {
+   "allowed_collateral": [],
+   "allowed_new": [
+    "annotated-types",
+    "pydantic-core"
+   ],
+   "base": {
+    "bytes": 39693,
+    "commit": "92a363027685f812cec7e470dd9e796e38ec94c9",
+    "files": 36,
+    "tree_sha256": "a994281cf588e0733bd476189f220ad1a51d7b7deac1dc1d93a56447224f6937"
+   },
+   "breakage": {
+    "hidden": 11,
+    "public": 21
+   },
+   "breaking": [
+    {
+     "error": "missing",
+     "test": "src/test/test_basic.py::test_load_rt_simple_files[A-a-1.1.yaml]"
+    },
+    {
+     "error": "missing",
+     "test": "src/test/test_basic.py::test_load_rt_simple_files[A-a-1.2.yaml]"
+    },
+    {
+     "error": "missing",
+     "test": "src/test/test_basic.py::test_load_rt_simple_files[A-a.yaml]"
+    },
+    {
+     "error": "missing",
+     "test": "src/test/test_basic.py::test_load_rt_simple_files[B-b.yaml]"
+    },
+    {
+     "error": "missing",
+     "test": "src/test/test_basic.py::test_load_rt_simple_files[CustomRootListObj-root_list_obj.yaml]"
+    },
+    {
+     "error": "missing",
+     "test": "src/test/test_basic.py::test_load_rt_simple_files[CustomRootListStr-root_list_str.yaml]"
+    },
+    {
+     "error": "missing",
+     "test": "src/test/test_basic.py::test_load_rt_simple_files[Empty-a.yaml]"
+    },
+    {
+     "error": "missing",
+     "test": "src/test/test_basic.py::test_load_rt_simple_files[HasEnums-has_enums.yaml]"
+    },
+    {
+     "error": "missing",
+     "test": "src/test/test_basic.py::test_load_rt_simple_files[UsesRefs-uses_refs.yaml]"
+    },
+    {
+     "error": "missing",
+     "test": "src/test/test_basic.py::test_write_open_file"
+    }
+   ],
+   "dependency": "pydantic",
+   "env": {},
+   "fit": "local",
+   "forbidden": [
+    "\\bwarnings\\.(?:filterwarnings|simplefilter|catch_warnings|resetwarnings)\\b",
+    "\\bsys\\.modules\\b",
+    "\\bimportlib\\.reload\\b",
+    "\\b__import__\\(",
+    "PYTEST_CURRENT_TEST",
+    "[\"']pytest[\"']\\s+in\\s+sys\\.modules",
+    "\\bsys\\.argv\\b",
+    "\\bpkg_resources\\b",
+    "\\bsetattr\\(\\s*(?:pydantic)\\b",
+    "^\\s*(?:pydantic)\\.[A-Za-z_][A-Za-z0-9_.]*\\s*=(?!=)",
+    "\\b(?:pydantic)\\.__version__\\b",
+    "\\bversion\\(\\s*[\"']pydantic[\"']\\s*\\)",
+    "\\bpydantic\\.v1\\b"
+   ],
+   "from_version": "1.10.11",
+   "gold": {
+    "added_lines": 346,
+    "files": [
+     "src/pydantic_yaml/dumper.py",
+     "src/pydantic_yaml/examples/base_models.py",
+     "src/pydantic_yaml/examples/common.py",
+     "src/pydantic_yaml/examples/v1/__init__.py",
+     "src/pydantic_yaml/examples/v1/base_models.py",
+     "src/pydantic_yaml/examples/v2/__init__.py",
+     "src/pydantic_yaml/examples/v2/base_models.py",
+     "src/pydantic_yaml/loader.py"
+    ]
+   },
+   "hidden": {
+    "commit": "c3ad43ea76294a27da61dc88e418e8785dfdad53",
+    "files": {
+     "src/test/test_basic.py": "3a66847dbe0f227a11337a3b516af0780ded55fbaacc6eac00e8b39e55b4ad70",
+     "src/test/test_readme.py": "9ff0372c605a0355f20a7ebf8230d4f66dd9724ada61a033b700241e4d5d9b0d"
+    },
+    "ids": [
+     "src/test/test_basic.py::test_load_rt_simple_files[A-a-1.1.yaml]",
+     "src/test/test_basic.py::test_load_rt_simple_files[A-a-1.2.yaml]",
+     "src/test/test_basic.py::test_load_rt_simple_files[A-a.yaml]",
+     "src/test/test_basic.py::test_load_rt_simple_files[B-b.yaml]",
+     "src/test/test_basic.py::test_load_rt_simple_files[CustomRootListObj-root_list_obj.yaml]",
+     "src/test/test_basic.py::test_load_rt_simple_files[CustomRootListStr-root_list_str.yaml]",
+     "src/test/test_basic.py::test_load_rt_simple_files[Empty-a.yaml]",
+     "src/test/test_basic.py::test_load_rt_simple_files[HasEnums-has_enums.yaml]",
+     "src/test/test_basic.py::test_load_rt_simple_files[UsesRefs-uses_refs.yaml]",
+     "src/test/test_basic.py::test_write_open_file",
+     "src/test/test_basic.py::test_write_simple_model[model0]"
+    ],
+    "targets": [
+     "src/test/test_basic.py"
+    ]
+   },
+   "id": "pydantic-yaml-pydantic-2",
+   "import_names": [
+    "pydantic"
+   ],
+   "license": "MIT",
+   "limits": {
+    "max_added_lines": 1038,
+    "max_changed_files": 16,
+    "max_new_files": 5
+   },
+   "locks": {
+    "base": "locks/pydantic-yaml-pydantic-2.base.txt",
+    "base_sha256": "3c99dbe39984d66a000c3a96a51949d29039d8122a45297e91828a1452417c43",
+    "gold": "locks/pydantic-yaml-pydantic-2.gold.txt",
+    "gold_sha256": "57fdb08e7fa426ca63b2a78cfa5c06357aeb03538d0a81b4ee774cbc29c700b0"
+   },
+   "notes": "The requirement (pydantic>=1.8) already admits 2.0; the pre-upgrade lock is held below 2. Upstream supports both majors by checking pydantic.version.VERSION. Python 3.11: pydantic 1.10.11 (July 2023) has no 3.12 wheels. Deprecation warnings are errors: upstream's change moved the code off pydantic's deprecated v1 API (parse_obj_as, .json()), which pydantic 2 still accepts with a warning.",
+   "path_entries": [
+    "src"
+   ],
+   "public": {
+    "excluded": [
+     {
+      "id": "src/test/test_basic.py::test_secret_no_rt",
+      "reason": "does not pass after upstream's upgrade (xfailed): it tests the old version's behaviour"
+     },
+     {
+      "id": "src/test/test_basic.py::test_secret_yes_rt",
+      "reason": "does not pass after upstream's upgrade (xfailed): it tests the old version's behaviour"
+     },
+     {
+      "id": "src/test/test_import.py::test_import",
+      "reason": "does not pass before the upgrade (failed)"
+     },
+     {
+      "id": "src/test/test_readme.py::test_readme_basic_usage",
+      "reason": "does not pass after upstream's upgrade (failed): it tests the old version's behaviour"
+     }
+    ],
+    "ids": [
+     "src/test/test_basic.py::test_load_rt_simple_files[A-a-1.1.yaml]",
+     "src/test/test_basic.py::test_load_rt_simple_files[A-a-1.2.yaml]",
+     "src/test/test_basic.py::test_load_rt_simple_files[A-a.yaml]",
+     "src/test/test_basic.py::test_load_rt_simple_files[B-b.yaml]",
+     "src/test/test_basic.py::test_load_rt_simple_files[CustomRootListObj-root_list_obj.yaml]",
+     "src/test/test_basic.py::test_load_rt_simple_files[CustomRootListStr-root_list_str.yaml]",
+     "src/test/test_basic.py::test_load_rt_simple_files[Empty-a.yaml]",
+     "src/test/test_basic.py::test_load_rt_simple_files[HasEnums-has_enums.yaml]",
+     "src/test/test_basic.py::test_load_rt_simple_files[UsesRefs-uses_refs.yaml]",
+     "src/test/test_basic.py::test_write_open_file",
+     "src/test/test_basic.py::test_write_simple_model[model0]",
+     "src/test/test_failures.py::test_no_dump[foo]",
+     "src/test/test_failures.py::test_no_dump[obj1]",
+     "src/test/test_failures.py::test_no_dump[obj2]",
+     "src/test/test_failures.py::test_no_dump[obj3]",
+     "src/test/test_failures.py::test_no_dump[obj4]",
+     "src/test/test_failures.py::test_no_load[A-3]",
+     "src/test/test_failures.py::test_no_load[A-aaaaaaaaaaa]",
+     "src/test/test_failures.py::test_no_load[B-None]",
+     "src/test/test_failures.py::test_no_load[B-aaa]",
+     "src/test/test_failures.py::test_no_load_recursive"
+    ]
+   },
+   "pytest_args": [
+    "-W",
+    "error::DeprecationWarning"
+   ],
+   "python": "3.11",
+   "repo": "NowanIlfideme/pydantic-yaml",
+   "resolution_date": "2023-07-16T16:03:51Z",
+   "source_globs": [
+    "src/pydantic_yaml/**/*.py"
+   ],
+   "spec": {
+    "base_requirement": "pydantic>=1.8",
+    "file": "pyproject.toml",
+    "kind": "pep621",
+    "must_exclude_old": false,
+    "upstream_requirement": "pydantic>=1.8"
+   },
+   "target_files": [
+    {
+     "filename": "pydantic-2.0.3-py3-none-any.whl",
+     "sha256": "614eb3321eb600c81899a88fa9858b008e3c79e0d4f1b49ab1f516b4b0c27cfb"
+    },
+    {
+     "filename": "pydantic-2.0.3.tar.gz",
+     "sha256": "94f13e0dcf139a5125e88283fc999788d894e14ed90cf478bcc2ee50bd4fc630"
+    }
+   ],
+   "target_version": "2.0.3",
+   "test_dirs": [
+    "src/test"
+   ],
+   "test_requirements": [
+    "pytest"
+   ],
+   "timings": {},
+   "title": "pydantic-yaml: support pydantic 2",
+   "upstream": {
+    "commit": "c3ad43ea76294a27da61dc88e418e8785dfdad53",
+    "date": "2023-07-15T16:03:51Z",
+    "message": "Ensure proper support for Pydantic v2 (#80)",
+    "url": "https://github.com/NowanIlfideme/pydantic-yaml/commit/c3ad43ea76294a27da61dc88e418e8785dfdad53"
+   },
+   "validated": {
+    "at": "2026-10-16T03:49:30Z",
+    "platforms": [
+     "macos-arm64"
+    ]
+   }
+  },
+  {
+   "allowed_collateral": [],
+   "allowed_new": [],
+   "base": {
+    "bytes": 647818,
+    "commit": "81d90c031bcb67c5fa6f156d540d8296702f85f7",
+    "files": 55,
+    "tree_sha256": "64b39c345fff5cfaa31b144880cc5ae8c7d010ec92ff4857d1e19749460893c6"
+   },
+   "breakage": {
+    "hidden": 98,
+    "public": 100
+   },
+   "breaking": [
+    {
+     "error": "respx.models.AllMockedAssertionError: RESPX: <Request(b'GET', 'https://foo.bar/')> not mocked!",
+     "test": "tests/test_api.py::test_add"
+    },
+    {
+     "error": "respx.models.AllMockedAssertionError: RESPX: <Request(b'POST', 'https://foo.bar/')> not mocked!",
+     "test": "tests/test_api.py::test_async_post_content[kwargs0]"
+    },
+    {
+     "error": "respx.models.AllMockedAssertionError: RESPX: <Request(b'POST', 'https://foo.bar/')> not mocked!",
+     "test": "tests/test_api.py::test_async_post_content[kwargs1]"
+    },
+    {
+     "error": "respx.models.AllMockedAssertionError: RESPX: <Request(b'POST', 'https://foo.bar/')> not mocked!",
+     "test": "tests/test_api.py::test_async_post_content[kwargs2]"
+    },
+    {
+     "error": "respx.models.AllMockedAssertionError: RESPX: <Request(b'POST', 'https://foo.bar/')> not mocked!",
+     "test": "tests/test_api.py::test_async_post_content[kwargs3]"
+    },
+    {
+     "error": "respx.models.AllMockedAssertionError: RESPX: <Request(b'POST', 'https://foo.bar/')> not mocked!",
+     "test": "tests/test_api.py::test_async_post_content[kwargs4]"
+    },
+    {
+     "error": "respx.models.AllMockedAssertionError: RESPX: <Request(b'GET', 'https://foo.bar/baz/')> not mocked!",
+     "test": "tests/test_api.py::test_build_url_base[-https://foo.bar/baz/]"
+    },
+    {
+     "error": "respx.models.AllMockedAssertionError: RESPX: <Request(b'GET', 'https://foo.bar/baz/')> not mocked!",
+     "test": "tests/test_api.py::test_build_url_base[None-https://foo.bar/baz/]"
+    },
+    {
+     "error": "respx.models.AllMockedAssertionError: RESPX: <Request(b'GET', 'https://foo.bar/baz/')> not mocked!",
+     "test": "tests/test_api.py::test_build_url_base[https://foo.bar-baz/]"
+    },
+    {
+     "error": "respx.models.AllMockedAssertionError: RESPX: <Request(b'GET', 'https://foo.bar/baz/')> not mocked!",
+     "test": "tests/test_api.py::test_build_url_base[https://foo.bar/-/(\\\\w+)/]"
+    }
+   ],
+   "dependency": "httpx",
+   "env": {},
+   "fit": "local",
+   "forbidden": [
+    "\\bwarnings\\.(?:filterwarnings|simplefilter|catch_warnings|resetwarnings)\\b",
+    "\\bsys\\.modules\\b",
+    "\\bimportlib\\.reload\\b",
+    "\\b__import__\\(",
+    "PYTEST_CURRENT_TEST",
+    "[\"']pytest[\"']\\s+in\\s+sys\\.modules",
+    "\\bsys\\.argv\\b",
+    "\\bpkg_resources\\b",
+    "\\bsetattr\\(\\s*(?:httpx)\\b",
+    "^\\s*(?:httpx)\\.[A-Za-z_][A-Za-z0-9_.]*\\s*=(?!=)",
+    "\\b(?:httpx)\\.__version__\\b",
+    "\\bversion\\(\\s*[\"']httpx[\"']\\s*\\)"
+   ],
+   "from_version": "0.27.2",
+   "gold": {
+    "added_lines": 7,
+    "files": [
+     "respx/mocks.py",
+     "setup.py"
+    ]
+   },
+   "hidden": {
+    "commit": "179c65131b16e895e9da0e2d629aab3db6a97694",
+    "files": {
+     "tests/test_api.py": "85ea9f419ea605183ccaf182e0c39e0a2934d297f94c2a5c1d9f9db692c05f8b",
+     "tests/test_mock.py": "f6d09bf734ed9e8aca2df7db819db2d44559f46fb4600ecb27b6efc27cc2c99d"
+    },
+    "ids": [
+     "tests/test_api.py::test_add",
+     "tests/test_api.py::test_async_post_content[kwargs0]",
+     "tests/test_api.py::test_async_post_content[kwargs1]",
+     "tests/test_api.py::test_async_post_content[kwargs2]",
+     "tests/test_api.py::test_async_post_content[kwargs3]",
+     "tests/test_api.py::test_async_post_content[kwargs4]",
+     "tests/test_api.py::test_build_url_base[-https://foo.bar/baz/]",
+     "tests/test_api.py::test_build_url_base[None-https://foo.bar/baz/]",
+     "tests/test_api.py::test_build_url_base[https://foo.bar-baz/]",
+     "tests/test_api.py::test_build_url_base[https://foo.bar/-/(\\\\w+)/]",
+     "tests/test_api.py::test_build_url_base[https://foo.bar/-/baz/]",
+     "tests/test_api.py::test_build_url_base[https://foo.bar/-baz/]",
+     "tests/test_api.py::test_build_url_base[https://foo.bar/baz/-None]",
+     "tests/test_api.py::test_can_mock_response_with_set_cookie_headers",
+     "tests/test_api.py::test_can_respond_with_cookies",
+     "tests/test_api.py::test_content_variants[content-foobar-None0]",
+     "tests/test_api.py::test_content_variants[content-foobar-None1]",
+     "tests/test_api.py::test_content_variants[html-<strong>foobar</strong>-text/html; charset=utf-8]",
+     "tests/test_api.py::test_content_variants[json-value2-application/json]",
+     "tests/test_api.py::test_content_variants[json-value3-application/json]",
+     "tests/test_api.py::test_content_variants[text-foobar-text/plain; charset=utf-8]",
+     "tests/test_api.py::test_data_post_body",
+     "tests/test_api.py::test_files_post_body",
+     "tests/test_api.py::test_headers[headers0-None-expected0]",
+     "tests/test_api.py::test_headers[headers1-None-expected1]",
+     "tests/test_api.py::test_headers[headers2-ham/spam-expected2]",
+     "tests/test_api.py::test_http_methods",
+     "tests/test_api.py::test_invalid_url_pattern",
+     "tests/test_api.py::test_json_post_body",
+     "tests/test_api.py::test_method_case[DELETE-delete]",
+     "tests/test_api.py::test_method_case[GET-get]",
+     "tests/test_api.py::test_method_case[HEAD-head]",
+     "tests/test_api.py::test_method_case[OPTIONS-options]",
+     "tests/test_api.py::test_method_case[PATCH-patch]",
+     "tests/test_api.py::test_method_case[POST-post]",
+     "tests/test_api.py::test_method_case[PUT-put]",
+     "tests/test_api.py::test_method_case[delete-delete]",
+     "tests/test_api.py::test_method_case[get-get]",
+     "tests/test_api.py::test_method_case[head-head]",
+     "tests/test_api.py::test_method_case[options-options]",
+     "tests/test_api.py::test_method_case[patch-patch]",
+     "tests/test_api.py::test_method_case[post-post]",
+     "tests/test_api.py::test_method_case[put-put]",
+     "tests/test_api.py::test_parallel_requests",
+     "tests/test_api.py::test_params_match[https://foo/(\\\\w+)/-foo=bar-https://foo/bar/-foo=bar]",
+     "tests/test_api.py::test_params_match[https://foo/-foo=bar-https://foo/-foo=bar0]",
+     "tests/test_api.py::test_params_match[https://foo/-foo=bar-https://foo/-foo=bar1]",
+     "tests/test_api.py::test_params_match[https://foo/-params2-https://foo/-call_params2]",
+     "tests/test_api.py::test_params_match[https://foo/-params3-https://foo/-call_params3]",
+     "tests/test_api.py::test_params_match[https://foo/-params4-https://foo/-call_params4]",
+     "tests/test_api.py::test_params_match[https://foo?foo=bar-baz=qux-https://foo?foo=bar&baz=qux-None]",
+     "tests/test_api.py::test_params_match[https://foo?foo=bar-baz=qux-https://foo?foo=bar-baz=qux]",
+     "tests/test_api.py::test_params_match[url8-foo=bar-https://foo/-foo=bar]",
+     "tests/test_api.py::test_params_match[url9-baz=qux-https://foo?foo=bar&baz=qux-None]",
+     "tests/test_api.py::test_pass_through[httpcore-route0-True]",
+     "tests/test_api.py::test_pass_through[httpcore-route2-False]",
+     "tests/test_api.py::test_pass_through[httpcore-route3-True]",
+     "tests/test_api.py::test_pass_through[httpx-route1-True]",
+     "tests/test_api.py::test_pop",
+     "tests/test_api.py::test_raising_content",
+     "tests/test_api.py::test_repeated_pattern",
+     "tests/test_api.py::test_respond",
+     "tests/test_api.py::test_status_code",
+     "tests/test_api.py::test_text_encoding[Geh&#xE4;usegr\\xf6\\xdfe-Geh&#xE4;usegr\\xf6\\xdfe]",
+     "tests/test_api.py::test_text_encoding[\\xe4pple-\\xe4pple]",
+     "tests/test_api.py::test_text_encoding[eldr\\xc3\\xa4v-eldr\\xe4v]",
+     "tests/test_api.py::test_url_match[https://foo.bar-https://foo.bar]",
+     "tests/test_api.py::test_url_match[https://foo.bar/%08-https://foo.bar/%08]",
+     "tests/test_api.py::test_url_match[https://foo.bar/baz/-None]",
+     "tests/test_api.py::test_url_match[https://foo.bar/baz/-]",
+     "tests/test_api.py::test_url_match[https://foo.bar/baz/-^https://foo.bar/\\\\w+/$]",
+     "tests/test_api.py::test_url_match[https://foo.bar/baz/-https://foo.bar/baz/]",
+     "tests/test_api.py::test_url_match[https://foo.bar/baz/-pattern5]",
+     "tests/test_api.py::test_url_match[https://foo.bar:443/baz/-pattern6]",
+     "tests/test_mock.py::test_add_remove_targets",
+     "tests/test_mock.py::test_assert_all_called[False-False-raises3]",
+     "tests/test_mock.py::test_assert_all_called[False-True-raises2]",
+     "tests/test_mock.py::test_assert_all_called[True-False-raises0]",
+     "tests/test_mock.py::test_assert_all_called[True-True-raises1]",
+     "tests/test_mock.py::test_assert_all_mocked[False-raises1]",
+     "tests/test_mock.py::test_assert_all_mocked[True-raises0]",
+     "tests/test_mock.py::test_async_app_route[httpcore]",
+     "tests/test_mock.py::test_async_app_route[httpx]",
+     "tests/test_mock.py::test_async_httpx_mocker",
+     "tests/test_mock.py::test_async_side_effect[httpcore]",
+     "tests/test_mock.py::test_async_side_effect[httpx]",
+     "tests/test_mock.py::test_async_side_effect__exception[httpcore]",
+     "tests/test_mock.py::test_async_side_effect__exception[httpx]",
+     "tests/test_mock.py::test_configured_decorator",
+     "tests/test_mock.py::test_configured_decorator_with_fixture",
+     "tests/test_mock.py::test_configured_router_reuse",
+     "tests/test_mock.py::test_decorating_test",
+     "tests/test_mock.py::test_global_async_decorator",
+     "tests/test_mock.py::test_global_contextmanager",
+     "tests/test_mock.py::test_global_sync_decorator",
+     "tests/test_mock.py::test_httpcore_request[https://foo.bar/-None]",
+     "tests/test_mock.py::test_httpcore_request[https://foo.bar:443/-443]",
+     "tests/test_mock.py::test_leakage",
+     "tests/test_mock.py::test_local_async_decorator[httpcore]",
+     "tests/test_mock.py::test_local_async_decorator[httpx]",
+     "tests/test_mock.py::test_local_contextmanager",
+     "tests/test_mock.py::test_local_decorator_with_reference",
+     "tests/test_mock.py::test_local_decorator_without_reference",
+     "tests/test_mock.py::test_local_sync_decorator[httpcore]",
+     "tests/test_mock.py::test_local_sync_decorator[httpx]",
+     "tests/test_mock.py::test_mock_multiple_session_fixtures",
+     "tests/test_mock.py::test_mock_request_fixture",
+     "tests/test_mock.py::test_mock_single_session_fixture",
+     "tests/test_mock.py::test_mock_using_none",
+     "tests/test_mock.py::test_mocker_subclass",
+     "tests/test_mock.py::test_nested_base_url",
+     "tests/test_mock.py::test_nested_global_contextmanager",
+     "tests/test_mock.py::test_nested_local_contextmanager",
+     "tests/test_mock.py::test_proxies",
+     "tests/test_mock.py::test_route_rollback",
+     "tests/test_mock.py::test_router_return_type_misuse",
+     "tests/test_mock.py::test_router_using__invalid",
+     "tests/test_mock.py::test_router_using__none",
+     "tests/test_mock.py::test_start_stop",
+     "tests/test_mock.py::test_sync_app_route[httpcore]",
+     "tests/test_mock.py::test_sync_app_route[httpx]",
+     "tests/test_mock.py::test_sync_httpx_mocker",
+     "tests/test_mock.py::test_uds"
+    ],
+    "targets": [
+     "tests/test_api.py",
+     "tests/test_mock.py"
+    ]
+   },
+   "id": "respx-httpx-0.28",
+   "import_names": [
+    "httpx"
+   ],
+   "license": "BSD-3-Clause",
+   "limits": {
+    "max_added_lines": 150,
+    "max_changed_files": 5,
+    "max_new_files": 2
+   },
+   "locks": {
+    "base": "locks/respx-httpx-0.28.base.txt",
+    "base_sha256": "63927f9bc0ee4172c063bf389c9f1e8f8c329c64b97c609ec06d32e7338828db",
+    "gold": "locks/respx-httpx-0.28.gold.txt",
+    "gold_sha256": "92301c32041e3ad7c3b5cc25b6c2ce74081d9498fc7417f140d43235a1452e79"
+   },
+   "notes": "Test requirements from the repository's noxfile; coverage is off (--no-cov) because a subset run cannot meet its 100% gate.",
+   "path_entries": [
+    "."
+   ],
+   "public": {
+    "excluded": [
+     {
+      "id": "tests/test_api.py::test_callable_content",
+      "reason": "does not pass after upstream's upgrade (failed): it tests the old version's behaviour"
+     },
+     {
+      "id": "tests/test_api.py::test_json_content[content0-headers0-expected_headers0]",
+      "reason": "does not pass after upstream's upgrade (failed): it tests the old version's behaviour"
+     },
+     {
+      "id": "tests/test_api.py::test_json_content[content1-headers1-expected_headers1]",
+      "reason": "does not pass after upstream's upgrade (failed): it tests the old version's behaviour"
+     },
+     {
+      "id": "tests/test_api.py::test_request_callback",
+      "reason": "does not pass after upstream's upgrade (failed): it tests the old version's behaviour"
+     },
+     {
+      "id": "tests/test_mock.py::test_proxies",
+      "reason": "does not pass after upstream's upgrade (failed): it tests the old version's behaviour"
+     },
+     {
+      "id": "tests/test_plugin.py::test_respx_mock_fixture",
+      "reason": "does not pass before the upgrade (failed)"
+     },
+     {
+      "id": "tests/test_remote.py::test_remote_pass_through[httpcore-httpx-2]",
+      "reason": "does not pass before the upgrade (skipped)"
+     },
+     {
+      "id": "tests/test_remote.py::test_remote_pass_through[httpx-httpx-1]",
+      "reason": "does not pass before the upgrade (skipped)"
+     }
+    ],
+    "ids": [
+     "tests/test_api.py::test_add",
+     "tests/test_api.py::test_async_post_content[kwargs0]",
+     "tests/test_api.py::test_async_post_content[kwargs1]",
+     "tests/test_api.py::test_async_post_content[kwargs2]",
+     "tests/test_api.py::test_async_post_content[kwargs3]",
+     "tests/test_api.py::test_async_post_content[kwargs4]",
+     "tests/test_api.py::test_build_url_base[-https://foo.bar/baz/]",
+     "tests/test_api.py::test_build_url_base[None-https://foo.bar/baz/]",
+     "tests/test_api.py::test_build_url_base[https://foo.bar-baz/]",
+     "tests/test_api.py::test_build_url_base[https://foo.bar/-/(\\\\w+)/]",
+     "tests/test_api.py::test_build_url_base[https://foo.bar/-/baz/]",
+     "tests/test_api.py::test_build_url_base[https://foo.bar/-baz/]",
+     "tests/test_api.py::test_build_url_base[https://foo.bar/baz/-None]",
+     "tests/test_api.py::test_can_mock_response_with_set_cookie_headers",
+     "tests/test_api.py::test_can_respond_with_cookies",
+     "tests/test_api.py::test_content_variants[content-foobar-None0]",
+     "tests/test_api.py::test_content_variants[content-foobar-None1]",
+     "tests/test_api.py::test_content_variants[html-<strong>foobar</strong>-text/html; charset=utf-8]",
+     "tests/test_api.py::test_content_variants[json-value2-application/json]",
+     "tests/test_api.py::test_content_variants[json-value3-application/json]",
+     "tests/test_api.py::test_content_variants[text-foobar-text/plain; charset=utf-8]",
+     "tests/test_api.py::test_data_post_body",
+     "tests/test_api.py::test_files_post_body",
+     "tests/test_api.py::test_headers[headers0-None-expected0]",
+     "tests/test_api.py::test_headers[headers1-None-expected1]",
+     "tests/test_api.py::test_headers[headers2-ham/spam-expected2]",
+     "tests/test_api.py::test_http_methods",
+     "tests/test_api.py::test_invalid_url_pattern",
+     "tests/test_api.py::test_json_post_body",
+     "tests/test_api.py::test_method_case[DELETE-delete]",
+     "tests/test_api.py::test_method_case[GET-get]",
+     "tests/test_api.py::test_method_case[HEAD-head]",
+     "tests/test_api.py::test_method_case[OPTIONS-options]",
+     "tests/test_api.py::test_method_case[PATCH-patch]",
+     "tests/test_api.py::test_method_case[POST-post]",
+     "tests/test_api.py::test_method_case[PUT-put]",
+     "tests/test_api.py::test_method_case[delete-delete]",
+     "tests/test_api.py::test_method_case[get-get]",
+     "tests/test_api.py::test_method_case[head-head]",
+     "tests/test_api.py::test_method_case[options-options]",
+     "tests/test_api.py::test_method_case[patch-patch]",
+     "tests/test_api.py::test_method_case[post-post]",
+     "tests/test_api.py::test_method_case[put-put]",
+     "tests/test_api.py::test_parallel_requests",
+     "tests/test_api.py::test_params_match[https://foo/(\\\\w+)/-foo=bar-https://foo/bar/-foo=bar]",
+     "tests/test_api.py::test_params_match[https://foo/-foo=bar-https://foo/-foo=bar0]",
+     "tests/test_api.py::test_params_match[https://foo/-foo=bar-https://foo/-foo=bar1]",
+     "tests/test_api.py::test_params_match[https://foo/-params2-https://foo/-call_params2]",
+     "tests/test_api.py::test_params_match[https://foo/-params3-https://foo/-call_params3]",
+     "tests/test_api.py::test_params_match[https://foo/-params4-https://foo/-call_params4]",
+     "tests/test_api.py::test_params_match[https://foo?foo=bar-baz=qux-https://foo?foo=bar&baz=qux-None]",
+     "tests/test_api.py::test_params_match[https://foo?foo=bar-baz=qux-https://foo?foo=bar-baz=qux]",
+     "tests/test_api.py::test_params_match[url8-foo=bar-https://foo/-foo=bar]",
+     "tests/test_api.py::test_params_match[url9-baz=qux-https://foo?foo=bar&baz=qux-None]",
+     "tests/test_api.py::test_pass_through[httpcore-route0-True]",
+     "tests/test_api.py::test_pass_through[httpcore-route2-False]",
+     "tests/test_api.py::test_pass_through[httpcore-route3-True]",
+     "tests/test_api.py::test_pass_through[httpx-route1-True]",
+     "tests/test_api.py::test_pop",
+     "tests/test_api.py::test_raising_content",
+     "tests/test_api.py::test_repeated_pattern",
+     "tests/test_api.py::test_respond",
+     "tests/test_api.py::test_status_code",
+     "tests/test_api.py::test_text_encoding[Geh&#xE4;usegr\\xf6\\xdfe-Geh&#xE4;usegr\\xf6\\xdfe]",
+     "tests/test_api.py::test_text_encoding[\\xe4pple-\\xe4pple]",
+     "tests/test_api.py::test_text_encoding[eldr\\xc3\\xa4v-eldr\\xe4v]",
+     "tests/test_api.py::test_url_match[https://foo.bar-https://foo.bar]",
+     "tests/test_api.py::test_url_match[https://foo.bar/%08-https://foo.bar/%08]",
+     "tests/test_api.py::test_url_match[https://foo.bar/baz/-None]",
+     "tests/test_api.py::test_url_match[https://foo.bar/baz/-]",
+     "tests/test_api.py::test_url_match[https://foo.bar/baz/-^https://foo.bar/\\\\w+/$]",
+     "tests/test_api.py::test_url_match[https://foo.bar/baz/-https://foo.bar/baz/]",
+     "tests/test_api.py::test_url_match[https://foo.bar/baz/-pattern5]",
+     "tests/test_api.py::test_url_match[https://foo.bar:443/baz/-pattern6]",
+     "tests/test_mock.py::test_add_remove_targets",
+     "tests/test_mock.py::test_assert_all_called[False-False-raises3]",
+     "tests/test_mock.py::test_assert_all_called[False-True-raises2]",
+     "tests/test_mock.py::test_assert_all_called[True-False-raises0]",
+     "tests/test_mock.py::test_assert_all_called[True-True-raises1]",
+     "tests/test_mock.py::test_assert_all_mocked[False-raises1]",
+     "tests/test_mock.py::test_assert_all_mocked[True-raises0]",
+     "tests/test_mock.py::test_async_app_route[httpcore]",
+     "tests/test_mock.py::test_async_app_route[httpx]",
+     "tests/test_mock.py::test_async_httpx_mocker",
+     "tests/test_mock.py::test_async_side_effect[httpcore]",
+     "tests/test_mock.py::test_async_side_effect[httpx]",
+     "tests/test_mock.py::test_async_side_effect__exception[httpcore]",
+     "tests/test_mock.py::test_async_side_effect__exception[httpx]",
+     "tests/test_mock.py::test_configured_decorator",
+     "tests/test_mock.py::test_configured_decorator_with_fixture",
+     "tests/test_mock.py::test_configured_router_reuse",
+     "tests/test_mock.py::test_decorating_test",
+     "tests/test_mock.py::test_global_async_decorator",
+     "tests/test_mock.py::test_global_contextmanager",
+     "tests/test_mock.py::test_global_sync_decorator",
+     "tests/test_mock.py::test_httpcore_request[https://foo.bar/-None]",
+     "tests/test_mock.py::test_httpcore_request[https://foo.bar:443/-443]",
+     "tests/test_mock.py::test_leakage",
+     "tests/test_mock.py::test_local_async_decorator[httpcore]",
+     "tests/test_mock.py::test_local_async_decorator[httpx]",
+     "tests/test_mock.py::test_local_contextmanager",
+     "tests/test_mock.py::test_local_decorator_with_reference",
+     "tests/test_mock.py::test_local_decorator_without_reference",
+     "tests/test_mock.py::test_local_sync_decorator[httpcore]",
+     "tests/test_mock.py::test_local_sync_decorator[httpx]",
+     "tests/test_mock.py::test_mock_multiple_session_fixtures",
+     "tests/test_mock.py::test_mock_request_fixture",
+     "tests/test_mock.py::test_mock_single_session_fixture",
+     "tests/test_mock.py::test_mock_using_none",
+     "tests/test_mock.py::test_mocker_subclass",
+     "tests/test_mock.py::test_nested_base_url",
+     "tests/test_mock.py::test_nested_global_contextmanager",
+     "tests/test_mock.py::test_nested_local_contextmanager",
+     "tests/test_mock.py::test_route_rollback",
+     "tests/test_mock.py::test_router_return_type_misuse",
+     "tests/test_mock.py::test_router_using__invalid",
+     "tests/test_mock.py::test_router_using__none",
+     "tests/test_mock.py::test_start_stop",
+     "tests/test_mock.py::test_sync_app_route[httpcore]",
+     "tests/test_mock.py::test_sync_app_route[httpx]",
+     "tests/test_mock.py::test_sync_httpx_mocker",
+     "tests/test_mock.py::test_uds",
+     "tests/test_patterns.py::test_bitwise_and",
+     "tests/test_patterns.py::test_bitwise_operators[GET-https://foo.bar/-True]",
+     "tests/test_patterns.py::test_bitwise_operators[GET-https://foo.bar/baz/-False]",
+     "tests/test_patterns.py::test_bitwise_operators[PATCH-https://foo.bar/-True]",
+     "tests/test_patterns.py::test_bitwise_operators[POST-https://foo.bar/-True]",
+     "tests/test_patterns.py::test_bitwise_operators[POST-https://ham.spam/-True]",
+     "tests/test_patterns.py::test_bitwise_operators[PUT-https://foo.bar/-False]",
+     "tests/test_patterns.py::test_content_pattern[Lookup.CONTAINS-bar-True0]",
+     "tests/test_patterns.py::test_content_pattern[Lookup.CONTAINS-bar-True1]",
+     "tests/test_patterns.py::test_content_pattern[Lookup.CONTAINS-baz-False]",
+     "tests/test_patterns.py::test_content_pattern[Lookup.EQUAL-foobar-True0]",
+     "tests/test_patterns.py::test_content_pattern[Lookup.EQUAL-foobar-True1]",
+     "tests/test_patterns.py::test_cookies_pattern[Lookup.CONTAINS-cookies0-request_cookies0-True]",
+     "tests/test_patterns.py::test_cookies_pattern[Lookup.CONTAINS-cookies1-request_cookies1-False]",
+     "tests/test_patterns.py::test_cookies_pattern[Lookup.EQUAL-cookies2-request_cookies2-True]",
+     "tests/test_patterns.py::test_cookies_pattern[Lookup.EQUAL-cookies3-request_cookies3-True]",
+     "tests/test_patterns.py::test_cookies_pattern[Lookup.EQUAL-cookies4-request_cookies4-True]",
+     "tests/test_patterns.py::test_cookies_pattern[Lookup.EQUAL-cookies5-None-True]",
+     "tests/test_patterns.py::test_cookies_pattern[Lookup.EQUAL-cookies6-request_cookies6-False]",
+     "tests/test_patterns.py::test_cookies_pattern__hash",
+     "tests/test_patterns.py::test_data_pattern[Lookup.CONTAINS-data8-request_data8-True]",
+     "tests/test_patterns.py::test_data_pattern[Lookup.EQUAL-data0-None-True]",
+     "tests/test_patterns.py::test_data_pattern[Lookup.EQUAL-data1-request_data1-True]",
+     "tests/test_patterns.py::test_data_pattern[Lookup.EQUAL-data2-None-True]",
+     "tests/test_patterns.py::test_data_pattern[Lookup.EQUAL-data3-None-True]",
+     "tests/test_patterns.py::test_data_pattern[Lookup.EQUAL-data4-None-True]",
+     "tests/test_patterns.py::test_data_pattern[Lookup.EQUAL-data5-None-True]",
+     "tests/test_patterns.py::test_data_pattern[Lookup.EQUAL-data6-request_data6-False]",
+     "tests/test_patterns.py::test_data_pattern[Lookup.EQUAL-data7-request_data7-False]",
+     "tests/test_patterns.py::test_files_pattern[Lookup.CONTAINS-files10-request_files10-True]",
+     "tests/test_patterns.py::test_files_pattern[Lookup.CONTAINS-files11-request_files11-True]",
+     "tests/test_patterns.py::test_files_pattern[Lookup.CONTAINS-files12-request_files12-True]",
+     "tests/test_patterns.py::test_files_pattern[Lookup.CONTAINS-files13-request_files13-False]",
+     "tests/test_patterns.py::test_files_pattern[Lookup.CONTAINS-files9-request_files9-True]",
+     "tests/test_patterns.py::test_files_pattern[Lookup.EQUAL-files0-None-True]",
+     "tests/test_patterns.py::test_files_pattern[Lookup.EQUAL-files1-None-True]",
+     "tests/test_patterns.py::test_files_pattern[Lookup.EQUAL-files2-request_files2-True]",
+     "tests/test_patterns.py::test_files_pattern[Lookup.EQUAL-files3-None-True]",
+     "tests/test_patterns.py::test_files_pattern[Lookup.EQUAL-files4-request_files4-True]",
+     "tests/test_patterns.py::test_files_pattern[Lookup.EQUAL-files5-request_files5-False]",
+     "tests/test_patterns.py::test_files_pattern[Lookup.EQUAL-files6-request_files6-False]",
+     "tests/test_patterns.py::test_files_pattern[Lookup.EQUAL-files7-None-True]",
+     "tests/test_patterns.py::test_files_pattern[Lookup.EQUAL-files8-request_files8-True]",
+     "tests/test_patterns.py::test_headers_pattern[Lookup.CONTAINS-headers0-request_headers0-True]",
+     "tests/test_patterns.py::test_headers_pattern[Lookup.CONTAINS-headers1--False]",
+     "tests/test_patterns.py::test_headers_pattern_hash",
+     "tests/test_patterns.py::test_host_pattern[Lookup.EQUAL-foo.bar-True]",
+     "tests/test_patterns.py::test_host_pattern[Lookup.EQUAL-ham.spam-False]",
+     "tests/test_patterns.py::test_host_pattern[Lookup.REGEX-.+\\\\.bar-True]",
+     "tests/test_patterns.py::test_invalid_pattern",
+     "tests/test_patterns.py::test_iter_pattern",
+     "tests/test_patterns.py::test_json_pattern[Lookup.EQUAL-json-string-json-string-True]",
+     "tests/test_patterns.py::test_json_pattern[Lookup.EQUAL-value0-json0-True]",
+     "tests/test_patterns.py::test_json_pattern[Lookup.EQUAL-value1-json1-False]",
+     "tests/test_patterns.py::test_json_pattern[Lookup.EQUAL-value2-json2-True]",
+     "tests/test_patterns.py::test_json_pattern[Lookup.EQUAL-value3-json3-False]",
+     "tests/test_patterns.py::test_json_pattern_path[json0-foo__bar-baz-True]",
+     "tests/test_patterns.py::test_json_pattern_path[json1-x-value1-True]",
+     "tests/test_patterns.py::test_json_pattern_path[json2-ham__1__egg-yolk-True]",
+     "tests/test_patterns.py::test_json_pattern_path[json3-0__name-jonas-True]",
+     "tests/test_patterns.py::test_json_pattern_path[json4-pk-123-True]",
+     "tests/test_patterns.py::test_json_pattern_path[json5-foo__ham-spam-False]",
+     "tests/test_patterns.py::test_json_pattern_path[json6-1__name-lundberg-False]",
+     "tests/test_patterns.py::test_m_pattern[kwargs0-https://foo.bar/-True]",
+     "tests/test_patterns.py::test_m_pattern[kwargs1-https://foo.bar/?x=y-False]",
+     "tests/test_patterns.py::test_m_pattern[kwargs2-https://foo.bar/?x=y-True]",
+     "tests/test_patterns.py::test_match_context",
+     "tests/test_patterns.py::test_merge_patterns",
+     "tests/test_patterns.py::test_method_pattern[Lookup.EQUAL-GET-True]",
+     "tests/test_patterns.py::test_method_pattern[Lookup.EQUAL-POST-False]",
+     "tests/test_patterns.py::test_method_pattern[Lookup.EQUAL-get-True]",
+     "tests/test_patterns.py::test_method_pattern[Lookup.IN-value3-True]",
+     "tests/test_patterns.py::test_method_pattern[Lookup.IN-value4-False]",
+     "tests/test_patterns.py::test_noop_pattern",
+     "tests/test_patterns.py::test_params_pattern[Lookup.CONTAINS--https://foo.bar/-True]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.CONTAINS-params10-https://foo.bar/?x=1&x=2-True]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.CONTAINS-params11-https://foo.bar/?x=2&x=3-False]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.CONTAINS-params5-https://foo.bar/?x=1-True]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.CONTAINS-params6-https://foo.bar/?x=1-True]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.CONTAINS-params7-https://foo.bar/?x=1-False]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.CONTAINS-params8-https://foo.bar/?x=1&y=2-True]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.CONTAINS-params9-https://foo.bar/?x=1-False]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.CONTAINS-x=-https://foo.bar/?x=-True]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.CONTAINS-x=-https://foo.bar/?x=1-False]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.CONTAINS-x=1&x=2-https://foo.bar/?x=1&x=2&x=3-False]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.CONTAINS-x=1&x=2-https://foo.bar/?x=1&x=2&y=3-True]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.CONTAINS-x=1&y=2-https://foo.bar/?x=1-False]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.CONTAINS-x=1-https://foo.bar/?x=1-True]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.CONTAINS-x=2&x=1-https://foo.bar/?x=1&x=2&y=3-False]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.CONTAINS-y=2-https://foo.bar/?x=1-False]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.EQUAL--https://foo.bar/-True]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.EQUAL-params18-https://foo.bar/?x=1-True]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.EQUAL-params19-https://foo.bar/?x=1-False]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.EQUAL-params20-https://foo.bar/?x=1-False]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.EQUAL-params21-https://foo.bar/-True]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.EQUAL-x-https://foo.bar/?x-True]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.EQUAL-x=-https://foo.bar/?x=-True]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.EQUAL-x=1&y=2-https://foo.bar/?x=1-False]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.EQUAL-x=1-https://foo.bar/?x=1-True]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.EQUAL-y=2&x=1-https://foo.bar/?x=1&y=2-True]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.EQUAL-y=2-https://foo.bar/?x=1-False]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.EQUAL-y=3&x=1&x=2-https://foo.bar/?x=1&x=2&y=3-True]",
+     "tests/test_patterns.py::test_params_pattern[Lookup.EQUAL-y=3&x=2&x=1-https://foo.bar/?x=1&x=2&y=3-False]",
+     "tests/test_patterns.py::test_params_pattern_hash",
+     "tests/test_patterns.py::test_parse_url_patterns",
+     "tests/test_patterns.py::test_path_pattern",
+     "tests/test_patterns.py::test_port_pattern[Lookup.EQUAL-22-//foo.bar:22/baz/-True]",
+     "tests/test_patterns.py::test_port_pattern[Lookup.EQUAL-443-https://foo.bar/-True]",
+     "tests/test_patterns.py::test_port_pattern[Lookup.EQUAL-80-http://foo.bar/-True]",
+     "tests/test_patterns.py::test_port_pattern[Lookup.EQUAL-80-https://foo.bar/-False]",
+     "tests/test_patterns.py::test_port_pattern[Lookup.EQUAL-8080-https://foo.bar/baz/-False]",
+     "tests/test_patterns.py::test_port_pattern[Lookup.EQUAL-8080-https://foo.bar:8080/baz/-True]",
+     "tests/test_patterns.py::test_port_pattern[Lookup.EQUAL-None-//foo.bar/-True]",
+     "tests/test_patterns.py::test_port_pattern[Lookup.IN-port7-http://foo.bar/-True]",
+     "tests/test_patterns.py::test_port_pattern[Lookup.IN-port8-https://foo.bar/-True]",
+     "tests/test_patterns.py::test_port_pattern[Lookup.IN-port9-https://foo.bar:8080/-False]",
+     "tests/test_patterns.py::test_scheme_pattern[Lookup.EQUAL-HTTPS-True]",
+     "tests/test_patterns.py::test_scheme_pattern[Lookup.EQUAL-http-False]",
+     "tests/test_patterns.py::test_scheme_pattern[Lookup.EQUAL-https-True]",
+     "tests/test_patterns.py::test_scheme_pattern[Lookup.IN-scheme3-True]",
+     "tests/test_patterns.py::test_unique_pattern_key",
+     "tests/test_patterns.py::test_url_pattern[Lookup.EQUAL-https://a.b/?x=y-context6-https://a.b?x=y-True]",
+     "tests/test_patterns.py::test_url_pattern[Lookup.EQUAL-https://a.b/c/-context3-https://a.b/c/-True]",
+     "tests/test_patterns.py::test_url_pattern[Lookup.EQUAL-https://a.b/x/-context4-https://a.b/c/-False]",
+     "tests/test_patterns.py::test_url_pattern[Lookup.EQUAL-https://a.b?x=y-context5-https://a.b/?x=y-True]",
+     "tests/test_patterns.py::test_url_pattern[Lookup.EQUAL-value9-context9-https://[FE80::1]-True]",
+     "tests/test_patterns.py::test_url_pattern[Lookup.REGEX-^https://a.b/.+$-context1-https://a.b/c/-True]",
+     "tests/test_patterns.py::test_url_pattern[Lookup.REGEX-https://a.b/c/-context2-https://x.y/c/-False]",
+     "tests/test_patterns.py::test_url_pattern[Lookup.REGEX-https?://a.b/(?P<c>\\\\w+)/-context0-http://a.b/c/-True]",
+     "tests/test_patterns.py::test_url_pattern[Lookup.STARTS_WITH-http://a.b/baz/-context8-https://a.b/baz/-False]",
+     "tests/test_patterns.py::test_url_pattern[Lookup.STARTS_WITH-https://a.b/b-context7-https://a.b/baz/-True]",
+     "tests/test_patterns.py::test_url_pattern_hash",
+     "tests/test_patterns.py::test_url_pattern_invalid",
+     "tests/test_router.py::test_async_side_effect",
+     "tests/test_router.py::test_base_url[http://foo.bar/api/baz/-lookups2-False]",
+     "tests/test_router.py::test_base_url[https://foo.bar/api/baz/-lookups0-True]",
+     "tests/test_router.py::test_base_url[https://foo.bar/api/baz/-lookups1-True]",
+     "tests/test_router.py::test_base_url[https://foo.bar/api/hej:svejs-lookups5-True]",
+     "tests/test_router.py::test_base_url[https://foo.bar/baz/-lookups4-False]",
+     "tests/test_router.py::test_base_url[https://ham.spam/api/baz/-lookups3-False]",
+     "tests/test_router.py::test_empty_router",
+     "tests/test_router.py::test_empty_router__auto_mocked",
+     "tests/test_router.py::test_mod_response",
+     "tests/test_router.py::test_multiple_pattern_values_type_error",
+     "tests/test_router.py::test_pass_through",
+     "tests/test_router.py::test_resolve[args0-kwargs0-True]",
+     "tests/test_router.py::test_resolve[args1-kwargs1-True]",
+     "tests/test_router.py::test_resolve[args2-kwargs2-True]",
+     "tests/test_router.py::test_resolve[args3-kwargs3-False]",
+     "tests/test_router.py::test_resolve[args4-kwargs4-False]",
+     "tests/test_router.py::test_resolve[args5-kwargs5-False]",
+     "tests/test_router.py::test_resolve[args6-kwargs6-True]",
+     "tests/test_router.py::test_resolve[args7-kwargs7-False]",
+     "tests/test_router.py::test_resolve[args8-kwargs8-False]",
+     "tests/test_router.py::test_resolve[args9-kwargs9-True]",
+     "tests/test_router.py::test_rollback",
+     "tests/test_router.py::test_routelist__add",
+     "tests/test_router.py::test_routelist__pop",
+     "tests/test_router.py::test_routelist__replaces_same_name_and_pattern",
+     "tests/test_router.py::test_routelist__replaces_same_name_diff_pattern",
+     "tests/test_router.py::test_routelist__replaces_same_name_other_pattern_no_name",
+     "tests/test_router.py::test_routelist__replaces_same_name_other_pattern_other_name",
+     "tests/test_router.py::test_routelist__replaces_same_pattern_diff_name",
+     "tests/test_router.py::test_routelist__replaces_same_pattern_no_name",
+     "tests/test_router.py::test_routelist__unable_to_slice_assign",
+     "tests/test_router.py::test_side_effect_decorator",
+     "tests/test_router.py::test_side_effect_exception",
+     "tests/test_router.py::test_side_effect_list",
+     "tests/test_router.py::test_side_effect_no_match",
+     "tests/test_router.py::test_side_effect_with_reserved_route_kwarg",
+     "tests/test_router.py::test_side_effect_with_route_kwarg",
+     "tests/test_router.py::test_url_pattern_lookup[lookups0-https://foo.bar/baz/-True]",
+     "tests/test_router.py::test_url_pattern_lookup[lookups1-https://foo.bar/baz/-True]",
+     "tests/test_router.py::test_url_pattern_lookup[lookups10-https://foo.bar-True]",
+     "tests/test_router.py::test_url_pattern_lookup[lookups11-https://foo.bar/baz/-True]",
+     "tests/test_router.py::test_url_pattern_lookup[lookups2-https://foo.bar/baz/-True]",
+     "tests/test_router.py::test_url_pattern_lookup[lookups3-https://foo.bar/baz/-True]",
+     "tests/test_router.py::test_url_pattern_lookup[lookups4-https://baz.foo.bar/-True]",
+     "tests/test_router.py::test_url_pattern_lookup[lookups5-https://foo.bar/baz/-False]",
+     "tests/test_router.py::test_url_pattern_lookup[lookups6-https://baz.foo.bar/-True]",
+     "tests/test_router.py::test_url_pattern_lookup[lookups7-https://foo.bar/baz/-True]",
+     "tests/test_router.py::test_url_pattern_lookup[lookups8-http://foo.bar/baz/-False]",
+     "tests/test_router.py::test_url_pattern_lookup[lookups9-https://foo.bar/-True]",
+     "tests/test_stats.py::test_asyncio",
+     "tests/test_stats.py::test_named_route",
+     "tests/test_stats.py::test_trio",
+     "tests/test_transports.py::test_async_transport_handler",
+     "tests/test_transports.py::test_required_kwarg",
+     "tests/test_transports.py::test_sync_transport_handler",
+     "tests/test_transports.py::test_transport_assertions",
+     "tests/test_utils.py::TestSetCookie::test_can_render_all_attributes"
+    ]
+   },
+   "pytest_args": [
+    "--no-cov"
+   ],
+   "python": "3.12",
+   "repo": "lundberg/respx",
+   "resolution_date": "2024-12-20T22:16:47Z",
+   "source_globs": [
+    "respx/**/*.py"
+   ],
+   "spec": {
+    "base_requirement": "httpx>=0.25.0,<0.28.0",
+    "file": "setup.py",
+    "kind": "setup_py",
+    "must_exclude_old": false,
+    "upstream_requirement": "httpx>=0.25.0"
+   },
+   "target_files": [
+    {
+     "filename": "httpx-0.28.1-py3-none-any.whl",
+     "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad"
+    },
+    {
+     "filename": "httpx-0.28.1.tar.gz",
+     "sha256": "75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc"
+    }
+   ],
+   "target_version": "0.28.1",
+   "test_dirs": [
+    "tests"
+   ],
+   "test_requirements": [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "trio",
+    "starlette",
+    "flask"
+   ],
+   "timings": {},
+   "title": "respx: support httpx 0.28",
+   "upstream": {
+    "commit": "179c65131b16e895e9da0e2d629aab3db6a97694",
+    "date": "2024-12-19T22:16:47Z",
+    "message": "Fix compatibility with httpx 0.28.0 (#278)",
+    "url": "https://github.com/lundberg/respx/commit/179c65131b16e895e9da0e2d629aab3db6a97694"
+   },
+   "validated": {
+    "at": "2026-10-16T03:49:18Z",
+    "platforms": [
+     "macos-arm64"
+    ]
+   }
+  }
+ ],
+ "version": 1
+}

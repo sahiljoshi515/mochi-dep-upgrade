@@ -1,264 +1,511 @@
-"""The upgrade-dependency outcome check: pure reads of the workspace against the pinned reference
-and the judge's record.
+"""The upgrade-dependency verdict: 19 ordered constraints, each checked by pure reads of the workspace
+against the catalog entry, the pinned answer key and the judge's record.
 
-Structure gates the verdict (score 0 when any gate fails): the judgement is the project's and
-complete, nothing changed after it, tests/ and README.md are pristine, every changed file is allowed and within the
-limits, pyproject.toml changed only in its dependencies array and as the rules allow, uv.lock holds
-the target from PyPI and every other direct dependency where it was, and no forbidden pattern is in
-src/. Then four outcomes score 0.25 each: version (lock consistent and installed), build, public
-tests, hidden tests. Valid only at 1.0.
+What the verifier recomputes itself, trusting no tool: the pristine record (against the catalog's
+tree hash), every changed file and added line (against the pristine copies), the spec's requirements
+(with its own reader), the lock's pins and hashes (against PyPI's files, read when the task started,
+and the validated post-upgrade lock), and the shim scan. What only the judge can do (installing,
+building, running the tests) it takes from the judgement, once that is shown to be this run's, for
+this instance, with nothing changed after it.
 """
 
 import hashlib
-import re
-from pathlib import Path
+import json
 
-from .checks import project_root, result
-from .judge import read_judgement
-from .pyproject import blank_dependencies, dependencies, is_project, is_pypi, lock_packages, requires_python
-from .trees import is_protected, sha256_of, tree_entries, tree_hash
-from .versions import admits, canonical_name, parse_requirement
+from . import catalog
+from .checks import Constraints, project_root, short
+from .locks import read_lock, versions_of
+from .shims import added_lines_by_file, pristine_manifest, scan
+from .specs import read_spec
+from .trees import changes, matches_any, sha256_of, text_lines, tree_entries, tree_hash, unified
+from .versions import admits, canonical_name, parse_requirement, requirement_key
 
-OUTCOMES = (
-    ("version", "Locked and installed the target version"),
-    ("build", "Wheel builds"),
-    ("public_tests", "Public tests pass"),
-    ("hidden_tests", "Hidden tests pass"),
-)
-ALLOWED_TOP = ("pyproject.toml", "uv.lock")
-NO_JUDGEMENT = "no judgement: call judge last"
+JUDGEMENT = "judgement.json"
+READY = "ready.json"
+LOCK = "requirements.lock"
+MAX_DIFF_LINES = 200
 
 
-def _allowed_path(rel, package):
-    if rel in ALLOWED_TOP:
-        return True
-    return rel.startswith(f"src/{package}/") and rel.endswith(".py") and ".." not in rel.split("/")
+def read_json(path):
+    """``(data, raw bytes)``, or ``(None, b"")`` when the file is missing or not a JSON object."""
+    if not path.is_file():
+        return None, b""
+    raw = path.read_bytes()
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return None, raw
+    return (data if isinstance(data, dict) else None), raw
 
 
-def _passed(record, expected_ids=None):
-    """Whether a recorded pytest run passed outright: exit 0, nothing failed to collect, every
-    collected test passed (and exactly ``expected_ids`` collected, when given). Returns
-    ``(ok, failed test ids)``."""
-    if not isinstance(record, dict):
-        return False, []
-    collected = record.get("collected") or []
-    outcomes = record.get("outcomes") or {}
-    if not isinstance(collected, list) or not isinstance(outcomes, dict):
-        return False, []
-    failed = sorted(test for test in collected if outcomes.get(test) != "passed")
-    ok = record.get("exit_status") == 0 and bool(collected) and not record.get("collection_errors") and not failed
-    if expected_ids is not None and set(collected) != set(expected_ids):
-        ok = False
-    return bool(ok and record.get("ok") is True), failed
-
-
-def _scan(src, patterns):
+def dependency_requirements(entry, requirements):
+    wanted = canonical_name(entry["dependency"])
     found = []
-    compiled = []
-    for pattern in patterns:
+    for text in requirements:
         try:
-            compiled.append((pattern, re.compile(pattern)))
-        except re.error:
-            found.append(f"unreadable forbidden pattern: {pattern}")
-    for path in sorted(Path(src).rglob("*.py")):
-        if {"__pycache__", ".venv", ".judge"} & set(path.relative_to(src).parts):
+            if parse_requirement(text).name == wanted:
+                found.append(text)
+        except ValueError:
             continue
-        rel = path.relative_to(Path(src).parent).as_posix()
-        for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-            for pattern, regex in compiled:
-                if regex.search(line):
-                    found.append(f"{rel}:{number}: {pattern}")
-    return found[:50]
+    return found
 
 
-def verify_task(arguments, reference, workspace):
-    pin = reference
-    project = arguments.project
-    report = {"project": project.value, "dependency": pin.dependency, "from_version": pin.from_version, "target_version": pin.target_version}
-    if pin.project != project:
-        return result(False, "the pinned reference is for another project", score=0.0, **report)
-    root = project_root(workspace, project)
-    judgement = read_judgement(workspace, project)
-    if judgement is None:
-        return result(False, NO_JUDGEMENT, score=0.0, checks=[], violations=[NO_JUDGEMENT], **report)
-    if judgement.get("project") != project.value:
-        return result(False, "the judgement is for another project", score=0.0, checks=[], violations=["judgement project"], **report)
-    if judgement.get("complete") is not True:
-        message = "the judge did not finish: call judge again until it reports complete"
-        return result(False, message, score=0.0, checks=[], violations=[message], **report)
-
+def spec_scope_problems(entry, requirements, base_requirements):
+    """Every way the spec's requirements go beyond raising the dependency (and what moves with it)."""
     problems = []
-    if judgement.get("dependency") != pin.dependency or judgement.get("target_version") != pin.target_version:
-        problems.append("the judgement is for another upgrade")
-    if judgement.get("pristine_tree_sha256") != pin.pristine_tree_sha256:
-        problems.append("the judge ran against another pristine project")
-    if judgement.get("hidden_tests_sha256") != pin.hidden_tests_sha256:
-        problems.append("the judge ran other hidden tests")
-    if judgement.get("tree_stable") is not True:
-        problems.append("files changed while the judge was running")
-
-    entries = tree_entries(root)
-    if tree_hash(entries) != judgement.get("tree_sha256"):
-        problems.append("files changed after the judge ran")
-    if tree_hash(entry for entry in entries if is_protected(entry[0])) != pin.protected_tree_sha256:
-        problems.append("tests/ or README.md differ from the pristine project")
-    pyproject_path = root / "pyproject.toml"
-    lock_path = root / "uv.lock"
-    if not pyproject_path.is_file() or sha256_of(pyproject_path) != judgement.get("pyproject_sha256"):
-        problems.append("pyproject.toml differs from the judged one")
-    if not lock_path.is_file() or sha256_of(lock_path) != judgement.get("uv_lock_sha256"):
-        problems.append("uv.lock differs from the judged one")
-
-    changed = judgement.get("changed_files")
-    changed_paths = []
-    new_files = 0
-    added_lines = 0
-    if not isinstance(changed, list):
-        problems.append("the judgement lists no changed files")
-        changed = []
-    for entry in changed:
-        if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
-            problems.append("a changed-file entry is malformed")
-            continue
-        rel = entry["path"]
-        status = entry.get("status")
-        changed_paths.append(f"{rel} ({status})")
-        if status == "deleted":
-            problems.append(f"file removed: {rel}")
-            continue
-        if not _allowed_path(rel, pin.package):
-            problems.append(f"file may not change: {rel}")
-        path = root / rel
-        if not path.is_file() or sha256_of(path) != entry.get("sha256"):
-            problems.append(f"file changed after the judge ran: {rel}")
-        if status == "added":
-            new_files += 1
-        lines = entry.get("added_lines")
-        added_lines += lines if isinstance(lines, int) and lines > 0 else 0
-    if new_files > pin.max_new_files:
-        problems.append(f"{new_files} new files, over the limit of {pin.max_new_files}")
-    if added_lines > pin.max_added_lines:
-        problems.append(f"{added_lines} added lines, over the limit of {pin.max_added_lines}")
-
-    dependency = canonical_name(pin.dependency)
-    collateral = {canonical_name(name) for name in pin.allowed_collateral}
-    allowed_new = {canonical_name(name) for name in pin.allowed_new_dependencies}
-    if pyproject_path.is_file():
-        text = pyproject_path.read_text(encoding="utf-8")
-        if hashlib.sha256(blank_dependencies(text).encode("utf-8")).hexdigest() != pin.pyproject_rest_sha256:
-            problems.append("pyproject.toml changed outside its [project] dependencies array")
-        if requires_python(text) != pin.requires_python:
-            problems.append("requires-python changed")
+    parsed = []
+    for text in requirements:
         try:
-            written = dependencies(text)
-            requirements = [parse_requirement(item) for item in written]
+            parsed.append((text, parse_requirement(text)))
         except ValueError as error:
-            problems.append(f"pyproject.toml dependencies are unreadable: {error}")
-            written, requirements = [], []
-        names = [requirement.name for requirement in requirements]
-        if len(set(names)) != len(names):
-            problems.append("a requirement is listed twice")
-        if any(requirement.url for requirement in requirements):
-            problems.append("a requirement points at a URL instead of PyPI")
-        targets = [requirement for requirement in requirements if requirement.name == dependency]
-        if len(targets) != 1:
-            problems.append(f"{pin.dependency} must be required exactly once")
+            problems.append(f"unreadable requirement {text!r}: {error}")
+    names = [requirement.name for _, requirement in parsed]
+    for name in sorted({name for name in names if names.count(name) > 1}):
+        problems.append(f"{name} is required more than once")
+    dependency = canonical_name(entry["dependency"])
+    base = {}
+    for text in base_requirements:
+        requirement = parse_requirement(text)
+        base[requirement.name] = (text, requirement)
+    collateral = {canonical_name(name) for name in entry.get("allowed_collateral", [])}
+    allowed_new = {canonical_name(name) for name in entry.get("allowed_new", [])}
+    for text, requirement in parsed:
+        if requirement.url:
+            problems.append(f"{requirement.raw_name} points at a URL instead of PyPI")
+            continue
+        if requirement.name == dependency:
+            had_marker = dependency in base and base[dependency][1].marker
+            if requirement.marker and not had_marker:
+                problems.append(f"{requirement.raw_name} must be required unconditionally")
+            continue
+        if requirement.name in base:
+            if requirement_key(text) != requirement_key(base[requirement.name][0]) and requirement.name not in collateral:
+                problems.append(f"requirement changed that the upgrade does not need: {text}")
+        elif requirement.name not in allowed_new:
+            problems.append(f"requirement added that is not allowed: {requirement.raw_name}")
+    for name, (text, _) in base.items():
+        if name != dependency and name not in names:
+            problems.append(f"requirement removed: {text}")
+    if dependency not in names:
+        problems.append(f"{entry['dependency']} is no longer required")
+    return problems
+
+
+def lock_differences(current, gold, dependency):
+    """``name before -> after`` for every package other than the dependency whose pinned versions
+    differ between the judged lock and the validated post-upgrade lock."""
+    now, want = versions_of(current), versions_of(gold)
+    out = []
+    for name in sorted((set(now) | set(want)) - {dependency}):
+        if now.get(name) != want.get(name):
+            out.append(f"{name} {','.join(want.get(name, [])) or 'absent'} -> {','.join(now.get(name, [])) or 'absent'}")
+    return out
+
+
+def diff_lines(root, changed):
+    out = []
+    for item in changed:
+        rel = item["path"]
+        pristine = root / ".judge" / "pristine" / rel
+        before = text_lines(pristine.read_bytes()) if pristine.is_file() and item["status"] != "added" else []
+        after = text_lines((root / rel).read_bytes()) if item["status"] != "deleted" else []
+        out.extend(unified(rel, before, after))
+        if len(out) >= MAX_DIFF_LINES:
+            return out[:MAX_DIFF_LINES] + ["... (diff cut)"]
+    return out
+
+
+def verify_task(arguments, output, reference, workspace):
+    instance = arguments.instance.value
+    entry = catalog.entry(instance)
+    entry_sha = catalog.entry_sha256(entry)
+    root = project_root(workspace, instance)
+    dependency, target, old = entry["dependency"], entry["target_version"], entry["from_version"]
+    dep = canonical_name(dependency)
+    spec = entry["spec"]
+    editable = [spec["file"], *entry["source_globs"]]
+    expected_files = sorted((item["filename"], item["sha256"]) for item in entry["target_files"])
+    c = Constraints()
+
+    # 1. The answer key: PyPI still serves the target release exactly as validated.
+    if reference is None:
+        c.add("instance_pinned", f"PyPI still serves {dependency} {target} as validated", False, message="No answer key was pinned for this run")
+        pypi_hashes = set()
+    else:
+        served = sorted((item.filename, item.sha256) for item in reference.pypi_files)
+        problems = []
+        if reference.instance != arguments.instance or reference.catalog_sha256 != entry_sha:
+            problems.append("The answer key was pinned for another instance or catalog")
+        if served != expected_files:
+            problems.append(f"PyPI no longer serves {dependency} {target} as validated")
+        if reference.pypi_yanked:
+            problems.append(f"PyPI marks {dependency} {target} yanked")
+        c.add(
+            "instance_pinned",
+            f"PyPI still serves {dependency} {target} as validated",
+            not problems,
+            expected=[name for name, _ in expected_files],
+            actual=[name for name, _ in served],
+            message="; ".join(problems),
+        )
+        pypi_hashes = {sha for _, sha in served}
+
+    # 2. The submission's facts.
+    facts = {"instance": output.instance.value, "dependency": canonical_name(output.dependency), "from_version": output.from_version.strip(), "to_version": output.to_version.strip()}
+    want = {"instance": instance, "dependency": dep, "from_version": old, "to_version": target}
+    wrong = [key for key in want if facts[key] != want[key]]
+    c.add(
+        "submitted_facts",
+        "The submission names this instance, its dependency and both versions",
+        not wrong,
+        expected=want,
+        actual=facts,
+        message=(f"The submission says {wrong[0]} {facts[wrong[0]]!r}; it is {want[wrong[0]]!r}" if wrong else ""),
+    )
+
+    # 3. Migration notes.
+    notes = [note.strip() for note in output.migration]
+    out_of_range = [note for note in notes if not 10 <= len(note) <= 200]
+    c.add(
+        "migration_notes",
+        "The submission explains the migration in 1 to 8 notes of 10 to 200 characters",
+        1 <= len(notes) <= 8 and not out_of_range,
+        expected="1-8 notes, 10-200 characters each",
+        actual=f"{len(notes)} notes, {len(out_of_range)} out of range",
+        message=f"The submission needs 1 to 8 migration notes of 10 to 200 characters (got {len(notes)}, {len(out_of_range)} out of range)",
+    )
+
+    # 4. A complete judgement for this instance.
+    judgement, raw = read_json(root / ".judge" / JUDGEMENT)
+    if judgement is None:
+        judged = c.add("judged", "The judge recorded a complete judgement", False, message="No judgement: call judge after your last change")
+    elif judgement.get("complete") is not True:
+        judged = c.add("judged", "The judge recorded a complete judgement", False, message="Judging did not finish: call judge again until it reports complete")
+    else:
+        judged = c.add(
+            "judged",
+            "The judge recorded a complete judgement",
+            judgement.get("version") == 2 and judgement.get("instance") == instance,
+            message="The judgement is for another instance or format",
+        )
+
+    # The pristine record, against the catalog: what every workspace check is measured from.
+    manifest = pristine_manifest(root) if root.is_dir() else None
+    pristine_ok = manifest is not None and manifest.get("instance") == instance and tree_hash(manifest["files"].items()) == entry["base"]["tree_sha256"]
+    if pristine_ok:
+        for rel in [path for path in manifest["files"] if matches_any(path, editable)]:
+            copy = root / ".judge" / "pristine" / rel
+            if not copy.is_file() or sha256_of(copy) != manifest["files"][rel]:
+                pristine_ok = False
+                break
+    no_project = "the project was never set up here (start_upgrade)" if manifest is None else "the pristine record was altered"
+    entries = tree_entries(root) if pristine_ok else []
+    changed = changes(manifest["files"], entries) if pristine_ok else []
+    derived = [item["path"] for item in changed]
+    added = added_lines_by_file(root, changed) if pristine_ok else {}
+
+    # 5. This run's judgement.
+    ready, _ = read_json(root / ".judge" / READY)
+    if not judged:
+        c.skip("judged_this_run", "The judgement was made in this run, after this set-up", "no complete judgement")
+    else:
+        fresh = reference is not None and hashlib.sha256(raw).hexdigest() != reference.prior_judgement_sha256
+        token = (ready or {}).get("setup_token", "")
+        same_setup = bool(token) and judgement.get("setup_token") == token
+        c.add(
+            "judged_this_run",
+            "The judgement was made in this run, after this set-up",
+            fresh and same_setup,
+            message=("The judgement is from an earlier run: call judge in this run" if not fresh else "The judgement does not belong to this set-up: start_upgrade, then judge"),
+        )
+
+    # 6. The judgement judged this instance as catalogued.
+    if not judged:
+        c.skip("judgement_consistent", "The judgement used this instance's catalog entry, pristine tree and hidden tests", "no complete judgement")
+    else:
+        hidden = judgement.get("hidden") or {}
+        mismatched = []
+        if judgement.get("catalog_sha256") != entry_sha:
+            mismatched.append("catalog entry")
+        if judgement.get("base_tree_sha256") != entry["base"]["tree_sha256"]:
+            mismatched.append("pristine tree")
+        if hidden.get("ran") and hidden.get("files_digest") != catalog.hidden_digest(entry["hidden"]["files"]):
+            mismatched.append("hidden tests")
+        c.add(
+            "judgement_consistent",
+            "The judgement used this instance's catalog entry, pristine tree and hidden tests",
+            not mismatched,
+            message="The judgement used another " + ", ".join(mismatched) if mismatched else "",
+        )
+
+    # 7. Nothing changed after (or while) judging.
+    if not judged:
+        c.skip("files_as_judged", "The files are exactly as the judge saw them", "no complete judgement")
+    elif not pristine_ok:
+        c.skip("files_as_judged", "The files are exactly as the judge saw them", no_project)
+    else:
+        recorded = {item.get("path"): item.get("sha256") for item in judgement.get("changed_files", []) if isinstance(item, dict)}
+        now = {item["path"]: item["sha256"] for item in changed}
+        drift = sorted(path for path in set(recorded) | set(now) if recorded.get(path) != now.get(path))
+        same_tree = tree_hash(entries) == judgement.get("tree_sha256")
+        stable = judgement.get("tree_stable") is True
+        c.add(
+            "files_as_judged",
+            "The files are exactly as the judge saw them",
+            same_tree and stable and not drift,
+            expected=judgement.get("tree_sha256"),
+            actual=tree_hash(entries),
+            message=(f"{drift[0]} changed after the judge ran" if drift else ("Files changed after the judge ran" if not same_tree else "Files changed while the judge was running")),
+        )
+
+    # 8. The submission matches the work.
+    requirement_now = ""
+    spec_requirements = None
+    spec_problem = ""
+    if pristine_ok:
+        try:
+            spec_requirements, blanked_now = read_spec(spec["kind"], (root / spec["file"]).read_bytes().decode("utf-8"))
+            found = dependency_requirements(entry, spec_requirements)
+            requirement_now = found[0] if len(found) == 1 else ""
+        except (ValueError, UnicodeDecodeError, OSError) as error:
+            spec_problem = f"{spec['file']} cannot be read: {error}"
+    if not pristine_ok:
+        c.skip("submission_matches", "The submission lists exactly the changed files and the spec's requirement", no_project)
+    else:
+        submitted = sorted({path.strip() for path in output.changed_files})
+        extra = [path for path in submitted if path not in derived]
+        missing = [path for path in derived if path not in submitted]
+        try:
+            same_requirement = bool(requirement_now) and requirement_key(output.requirement) == requirement_key(requirement_now)
+        except ValueError:
+            same_requirement = False
+        if extra:
+            message = "The submission lists files that did not change: " + ", ".join(short(extra, 5))
+        elif missing:
+            message = "The submission leaves out changed files: " + ", ".join(short(missing, 5))
         else:
-            target = targets[0]
-            if target.marker:
-                problems.append(f"{pin.dependency} must be required unconditionally")
-            if not target.specifier or not admits(target.specifier, pin.target_version):
-                problems.append(f"the requirement for {pin.dependency} does not admit {pin.target_version}")
-            elif admits(target.specifier, pin.from_version):
-                problems.append(f"the requirement for {pin.dependency} still admits {pin.from_version}")
-        pristine = {}
-        for item in pin.pristine_dependencies:
+            message = f"The submission states the requirement {output.requirement!r}; the spec says {requirement_now!r}"
+        c.add(
+            "submission_matches",
+            "The submission lists exactly the changed files and the spec's requirement",
+            not extra and not missing and same_requirement,
+            expected={"changed_files": derived, "requirement": requirement_now},
+            actual={"changed_files": submitted, "requirement": output.requirement},
+            message=message,
+        )
+
+    # 9. Only the spec and the package's source changed.
+    if not pristine_ok:
+        c.skip("allowed_files_only", "Only the spec's requirements and the package's source changed", no_project)
+    else:
+        outside = [item["path"] for item in changed if not matches_any(item["path"], editable)]
+        deleted = [item["path"] for item in changed if item["status"] == "deleted"]
+        c.add(
+            "allowed_files_only",
+            "Only the spec's requirements and the package's source changed",
+            not outside and not deleted,
+            expected=editable,
+            actual=short(outside + deleted, 10),
+            message=(f"{outside[0]} may not change" if outside else (f"{deleted[0]} was deleted" if deleted else "")),
+        )
+
+    # 10. Within the instance's limits.
+    limits = entry["limits"]
+    if not pristine_ok:
+        c.skip("within_limits", "The change stays within the instance's limits", no_project)
+    else:
+        files_changed = len(changed)
+        files_new = sum(1 for item in changed if item["status"] == "added")
+        lines_added = sum(len(lines) for lines in added.values())
+        over = []
+        if files_changed > limits["max_changed_files"]:
+            over.append(f"{files_changed} files changed (at most {limits['max_changed_files']})")
+        if files_new > limits["max_new_files"]:
+            over.append(f"{files_new} new files (at most {limits['max_new_files']})")
+        if lines_added > limits["max_added_lines"]:
+            over.append(f"{lines_added} added lines (at most {limits['max_added_lines']})")
+        c.add(
+            "within_limits",
+            "The change stays within the instance's limits",
+            not over,
+            expected=limits,
+            actual={"max_changed_files": files_changed, "max_new_files": files_new, "max_added_lines": lines_added},
+            message="; ".join(over),
+        )
+
+    # 11. The spec changed only as the upgrade needs.
+    if not pristine_ok:
+        c.skip("spec_scope", "The spec changed only the dependency's requirement (and what moves with it)", no_project)
+    elif spec_problem:
+        c.add("spec_scope", "The spec changed only the dependency's requirement (and what moves with it)", False, message=spec_problem)
+    else:
+        pristine_text = (root / ".judge" / "pristine" / spec["file"]).read_bytes().decode("utf-8")
+        base_requirements, blanked_base = read_spec(spec["kind"], pristine_text)
+        problems = []
+        if blanked_now != blanked_base:
+            problems.append(f"only the requirements in {spec['file']} may change; the rest of the file changed too")
+        problems += spec_scope_problems(entry, spec_requirements, base_requirements)
+        c.add(
+            "spec_scope",
+            "The spec changed only the dependency's requirement (and what moves with it)",
+            not problems,
+            expected=base_requirements,
+            actual=spec_requirements,
+            message="; ".join(problems[:3]),
+        )
+
+    # 12. The requirement admits the target (and excludes the old version when upstream's does).
+    exclude = bool(spec.get("must_exclude_old"))
+    constraint = f"{dependency}'s requirement admits {target}" + (f" and excludes {old}" if exclude else "")
+    if not pristine_ok:
+        c.skip("spec_admits_target", constraint, no_project)
+    elif not requirement_now:
+        c.add("spec_admits_target", constraint, False, message=f"The spec does not state {dependency}'s requirement exactly once")
+    else:
+        try:
+            specifier = parse_requirement(requirement_now).specifier
+            admits_target = admits(specifier, target)
+            admits_old = admits(specifier, old)
+        except ValueError:
+            admits_target, admits_old = False, True
+        ok = admits_target and not (exclude and admits_old)
+        c.add(
+            "spec_admits_target",
+            constraint,
+            ok,
+            expected=f"admits {target}" + (f", excludes {old}" if exclude else ""),
+            actual=requirement_now,
+            message=(f"The requirement {requirement_now} does not admit {target}" if not admits_target else f"The requirement {requirement_now} still admits {old}"),
+        )
+
+    # 13. The judged lock pins exactly the target, from PyPI's files.
+    lock_path = root / ".judge" / LOCK
+    lock_packages = None
+    if not judged:
+        c.skip("lock_target", f"The lock pins {dependency} {target} with PyPI's hashes", "no complete judgement")
+    else:
+        lock = judgement.get("lock") or {}
+        problem = ""
+        if not lock.get("ok"):
+            problem = "The spec did not resolve when judged: " + " ".join((lock.get("tail") or [])[-2:])[:300]
+        elif not lock_path.is_file() or sha256_of(lock_path) != lock.get("sha256"):
+            problem = "The lock changed after judging"
+        else:
             try:
-                pristine[parse_requirement(item).name] = item
+                lock_packages = read_lock(lock_path.read_text(encoding="utf-8"))
+            except (ValueError, UnicodeDecodeError) as error:
+                problem = f"The lock cannot be read: {error}"
+        if not problem:
+            pins = lock_packages.get(dep, [])
+            versions = sorted({pin["version"] for pin in pins})
+            hashes = {sha for pin in pins for sha in pin["hashes"]}
+            if versions != [target]:
+                problem = f"The lock holds {dependency} {', '.join(versions) or 'nothing'}, not {target}"
+            elif not hashes or not hashes <= pypi_hashes:
+                problem = f"The lock's hashes for {dependency} are not the ones PyPI serves for {target}"
+        c.add("lock_target", f"The lock pins {dependency} {target} with PyPI's hashes", not problem, expected=target, actual=(sorted({pin["version"] for pin in (lock_packages or {}).get(dep, [])}) if lock_packages else None), message=problem)
+
+    # 14. Nothing else in the lock moved beyond the validated upgrade.
+    if lock_packages is None:
+        c.skip("lock_scope", "Every other locked package is where the validated upgrade puts it", "no readable judged lock")
+    else:
+        moved = lock_differences(lock_packages, read_lock(catalog.lock_text(entry, "gold")), dep)
+        c.add(
+            "lock_scope",
+            "Every other locked package is where the validated upgrade puts it",
+            not moved,
+            actual=short(moved, 10),
+            message=(f"{moved[0]}: the upgrade does not need that" if moved else ""),
+        )
+
+    # 15. Installed for judging.
+    if not judged:
+        c.skip("installed_target", f"{dependency} {target} was installed for judging and the environment is consistent", "no complete judgement")
+    else:
+        install = judgement.get("install") or {}
+        installed = (install.get("installed") or {}).get(dependency, "")
+        check = (install.get("pip_check") or {}).get("ok") is True
+        c.add(
+            "installed_target",
+            f"{dependency} {target} was installed for judging and the environment is consistent",
+            bool(install.get("ok")) and installed == target and check,
+            expected=target,
+            actual=installed or None,
+            message=(f"Installed {installed or 'nothing'}, not {target}" if installed != target else "uv pip check found conflicts in the judged environment"),
+        )
+
+    # 16. The wheel builds, and what it declares for the dependency admits the target.
+    label = f"The project's wheel builds and its requirement on {dependency} admits {target}"
+    if not judged:
+        c.skip("builds", label, "no complete judgement")
+    else:
+        build = judgement.get("build") or {}
+        declared = []
+        for text in build.get("requires_dist") or []:
+            try:
+                requirement = parse_requirement(text)
             except ValueError:
-                problems.append(f"the pinned requirement is unreadable: {item}")
-        for requirement, raw in zip(requirements, written):
-            if requirement.name == dependency:
                 continue
-            if requirement.name in pristine:
-                if raw != pristine[requirement.name] and requirement.name not in collateral:
-                    problems.append(f"requirement changed: {requirement.raw_name}")
-            elif requirement.name not in allowed_new:
-                problems.append(f"requirement added that is not allowed: {requirement.raw_name}")
-        for name in pristine:
-            if name != dependency and name not in names:
-                problems.append(f"requirement removed: {name}")
-
-    if lock_path.is_file():
-        packages = lock_packages(lock_path.read_text(encoding="utf-8"))
-        by_name = {canonical_name(package["name"]): package for package in packages}
-        locked = by_name.get(dependency)
-        if locked is None:
-            problems.append(f"uv.lock does not hold {pin.dependency}")
+            if requirement.name == dep:
+                declared.append(requirement)
+        admitted = bool(declared) and all(admits(requirement.specifier, target) for requirement in declared)
+        if not build.get("ok"):
+            message = "The wheel did not build: " + " ".join((build.get("tail") or [])[-2:])[:300]
+        elif not declared:
+            message = f"The built wheel does not declare {dependency}"
         else:
-            if locked["version"] != pin.target_version:
-                problems.append(f"uv.lock holds {pin.dependency} {locked['version']}, not {pin.target_version}")
-            if not is_pypi(locked["source"]):
-                problems.append(f"uv.lock takes {pin.dependency} from outside PyPI")
-        for name, version in pin.other_dependencies.items():
-            if name in collateral:
-                continue
-            package = by_name.get(name)
-            if package is None or package["version"] != version:
-                problems.append(f"locked version changed: {name}")
-        for package in packages:
-            if not (is_pypi(package["source"]) or is_project(package["source"])):
-                problems.append(f"a package comes from outside PyPI: {package['name']}")
+            message = f"The built wheel requires {', '.join(requirement.text for requirement in declared)}, which does not admit {target}"
+        c.add("builds", label, bool(build.get("ok")) and admitted, expected=f"admits {target}", actual=[requirement.text for requirement in declared], message=message)
 
-    violations = list(judgement.get("forbidden") or [])
-    if (root / "src").is_dir():
-        for found in _scan(root / "src", pin.forbidden_patterns):
-            if found not in violations:
-                violations.append(found)
-    problems += [f"forbidden pattern: {found}" for found in violations]
+    # 17-18. The tests.
+    for cid, kind, label in (("public_tests_pass", "public", "The repository's judged tests pass"), ("hidden_tests_pass", "hidden", "Upstream's post-upgrade tests pass")):
+        if not judged:
+            c.skip(cid, label, "no complete judgement")
+            continue
+        record = judgement.get(kind) or {}
+        ids = entry[kind]["ids"]
+        right_set = record.get("ids_sha256") == catalog.ids_sha256(ids)
+        failed = record.get("failed") or []
+        missing = record.get("missing") or []
+        ok = bool(record.get("ok")) and right_set and not failed and not missing and record.get("failed_count", 0) == 0 and record.get("missing_count", 0) == 0
+        if not record.get("ran"):
+            message = f"The {kind} tests did not run: {record.get('skipped', 'no environment')}"
+        elif not right_set:
+            message = f"The judge ran another set of {kind} tests"
+        elif failed or record.get("failed_count"):
+            message = f"{record.get('failed_count', len(failed))} {kind} test(s) did not pass" + (f", e.g. {failed[0]}" if kind == "public" and failed else "")
+        elif missing or record.get("missing_count"):
+            message = f"{record.get('missing_count', len(missing))} {kind} test(s) were not collected"
+        else:
+            message = f"The {kind} test run did not finish cleanly"
+        c.add(cid, label, ok, expected=len(ids), actual=record.get("passed"), message=message)
 
-    installed = judgement.get("installed") if isinstance(judgement.get("installed"), dict) else {}
-    installed_version = installed.get(pin.dependency, "") if isinstance(installed, dict) else ""
-    lock_ok = isinstance(judgement.get("lock_check"), dict) and judgement["lock_check"].get("ok") is True
-    version_ok = lock_ok and installed_version == pin.target_version
-    build_ok = isinstance(judgement.get("build"), dict) and judgement["build"].get("ok") is True
-    public_ok, public_failed = _passed(judgement.get("public"))
-    hidden_ok, hidden_failed = _passed(judgement.get("hidden"), pin.hidden_test_ids)
-    outcomes = {"version": version_ok, "build": build_ok, "public_tests": public_ok, "hidden_tests": hidden_ok}
-    checks = [
-        {"id": "structure", "label": "Only allowed changes, nothing touched after judging", "ok": not problems, "message": "; ".join(problems[:5]) or "ok"},
-    ] + [
-        {"id": key, "label": label, "ok": outcomes[key], "message": _outcome_message(key, outcomes[key], installed_version, lock_ok, public_failed, hidden_failed, pin)}
-        for key, label in OUTCOMES
-    ]
+    # 19. No shims in what was added.
+    if not pristine_ok:
+        c.skip("no_shims", "No shim in the added lines (warning filters, monkeypatching, sniffing)", no_project)
+    else:
+        found = scan(root, changed, entry["forbidden"])
+        c.add("no_shims", "No shim in the added lines (warning filters, monkeypatching, sniffing)", not found, actual=short(found, 10), message=(f"Shim at {found[0]}" if found else ""))
+
+    hidden = (judgement or {}).get("hidden") or {}
+    public = (judgement or {}).get("public") or {}
     details = {
-        **report,
-        "installed_version": installed_version,
-        "checks": checks,
-        "changed_files": changed_paths,
-        "new_files": new_files,
-        "added_lines": added_lines,
-        "violations": problems,
-        "failed_tests": {"public": public_failed, "hidden": hidden_failed},
+        "instance": instance,
+        "repository": entry["repo"],
+        "dependency": dependency,
+        "from_version": old,
+        "target_version": target,
+        "fit": entry.get("fit", "local"),
+        "changed_files": derived,
+        "added_lines": sum(len(lines) for lines in added.values()),
+        "diff": diff_lines(root, changed) if pristine_ok else [],
+        "failed_tests": {"public": short(public.get("failed") or [], 10), "hidden": hidden.get("failed_count", 0)},
+        "provenance": {
+            "base_commit": entry["base"]["commit"],
+            "upstream_commit": entry["upstream"]["url"],
+            "pypi_files": [name for name, _ in expected_files],
+            "resolution_date": entry["resolution_date"],
+        },
     }
-    if problems:
-        return result(False, f"{len(problems)} problem(s): {problems[0]}", score=0.0, **details)
-    score = sum(0.25 for key in outcomes if outcomes[key])
-    if score < 1.0:
-        failed = [label for key, label in OUTCOMES if not outcomes[key]]
-        return result(False, "not done: " + "; ".join(failed), score=score, **details)
-    return result(True, f"{pin.dependency} {pin.from_version} -> {pin.target_version}: locked, built, public and hidden tests pass", score=1.0, **details)
-
-
-def _outcome_message(key, ok, installed_version, lock_ok, public_failed, hidden_failed, pin):
-    if ok:
-        return "ok"
-    if key == "version":
-        if not lock_ok:
-            return "uv.lock does not match pyproject.toml"
-        return f"installed {installed_version or 'nothing'}, expected {pin.target_version}"
-    if key == "build":
-        return "uv build --wheel failed"
-    if key == "public_tests":
-        return f"{len(public_failed)} public test(s) did not pass" if public_failed else "the public tests did not run clean"
-    return f"{len(hidden_failed)} hidden test(s) did not pass" if hidden_failed else "the hidden tests did not run clean"
+    success = f"{dependency} {old} -> {target} locked from PyPI's files, installed and built; {len(entry['public']['ids'])} public and {len(entry['hidden']['ids'])} hidden tests pass"
+    return c.verdict(success, **details)
