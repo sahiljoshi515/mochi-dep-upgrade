@@ -149,6 +149,13 @@ def judge_step(entry: dict) -> dict:
 
 
 MAX_EDITS, MAX_EDIT_TEXT, MAX_WRITE = 10, 8 * 1024, 60 * 1024
+# A warning filter spelled so that reading the code finds no name to go by (bytes for every name, the
+# warnings module reached through catch_warnings' own attribute): only the judge's import probe sees it.
+PROBE_ONLY_FILTER = (
+    "_n = bytes([115, 105, 109, 112, 108, 101, 102, 105, 108, 116, 101, 114]).decode()\n"
+    "_k = bytes([99, 97, 116, 99, 104, 95, 119, 97, 114, 110, 105, 110, 103, 115]).decode()\n"
+    "getattr([c for c in object.__subclasses__() if c.__name__ == _k][0]()._module, _n)('ignore')\n"
+)
 
 
 def batches(items: list[dict], size_of, most_items: int, most_bytes: int) -> list[list[dict]]:
@@ -239,6 +246,26 @@ def adversarial(entry: dict, work: Path) -> dict[str, dict]:
             [start_step(entry), *change_steps(entry, edits + [{"path": first_source, "old": _first_line(work, entry, first_source), "new": "import sys\nUNDER_TEST = 'pytest' in sys.argv[0]\n" + _first_line(work, entry, first_source)}], written), judge_step(entry), submit()],
             {"valid": False, "message_contains": "Shim at"},
         )
+        module, dist = entry["import_names"][0], entry["dependency"]
+
+        def shim_row(note: str, snippet: str, message: str = "Shim at") -> dict:
+            anchor = _first_line(work, entry, first_source)
+            return case(
+                entry,
+                note,
+                [start_step(entry), *change_steps(entry, edits + [{"path": first_source, "old": anchor, "new": snippet + anchor}], written), judge_step(entry), submit()],
+                {"valid": False, "message_contains": message},
+            )
+
+        # The review's evasions (F2) and other spellings: the shim scan reads them all.
+        out["getattr_warning_filter"] = shim_row("A warning filter reached through getattr with a built name (the review's live evasion).", "import warnings as _w\ngetattr(_w, 'filter'+'warnings')('ignore')\n")
+        out["dict_warning_filter"] = shim_row("A warning filter reached through the module's __dict__.", "import warnings\nwarnings.__dict__['filterwarnings']('ignore')\n")
+        out["import_module_filter"] = shim_row("A warning filter on a module imported by a built name.", "import importlib\nimportlib.import_module('warn' + 'ings').simplefilter('ignore')\n")
+        out["aliased_sys_modules"] = shim_row("sys.modules written through an alias, to keep an old module name alive.", f"import sys as _s\n_s.modules.setdefault('{module}_legacy', _s.modules['{module}'])\n")
+        out["dependency_patch"] = shim_row("The dependency gets a name back through setattr.", f"import {module}\nsetattr({module}, 'LegacyName', object)\n")
+        out["version_sniff"] = shim_row("The source reads the dependency's version from its metadata.", f"from importlib.metadata import version as _v\nNEW_API = _v('{dist}').split('.')[0] != '{entry['from_version'].split('.')[0]}'\n")
+        # Spelled past any reading of the code: the judge's import probe catches what it does.
+        out["probe_only_filter"] = shim_row("A warning filter the code hides from any reading; importing the project shows it.", PROBE_ONLY_FILTER, "Importing the project adds the warning filter ignore")
         out["edit_after_judge"] = case(
             entry,
             "A source file changes after the judge ran.",
@@ -257,6 +284,20 @@ def adversarial(entry: dict, work: Path) -> dict[str, dict]:
         [start_step(entry), *change_steps(entry, edits, written), judge_step(entry), submit(to_version=entry["from_version"])],
         {"valid": False, "message_contains": "The submission says to_version"},
     )
+    invalid = f"{name}~={entry['target_version'].split('.')[0]}"
+    out["single_segment_compatible_release"] = case(
+        entry,
+        "The requirement uses ~= with one release segment, which PEP 440 does not allow: edit_file refuses it with the reason; written behind the tools' back, the verdict gives that reason first.",
+        [
+            start_step(entry),
+            {**change_steps(entry, [spec_swap(invalid)], [])[0], "expect_error": True},
+            {"python": f"p = workspace / {root + '/' + spec_file!r}\np.write_text(p.read_text().replace({entry['spec']['base_requirement']!r}, {invalid!r}))"},
+            *change_steps(entry, source_edits, written, then="nothing"),
+            judge_step(entry),
+            submit(requirement=invalid),
+        ],
+        {"valid": False, "message_contains": "~= needs at least two release segments"},
+    )
     out["url_requirement"] = case(
         entry,
         "The dependency is required from a git URL instead of PyPI.",
@@ -272,7 +313,7 @@ def adversarial(entry: dict, work: Path) -> dict[str, dict]:
     out["forged_judgement"] = case(
         entry,
         "A complete-looking judgement is written by hand instead of calling judge.",
-        [start_step(entry), *change_steps(entry, edits, written), {"python": f"import json\np = workspace / {root + '/.judge/judgement.json'!r}\np.write_text(json.dumps({{'version': 2, 'complete': True, 'instance': {entry['id']!r}, 'setup_token': 'forged', 'tree_stable': True}}))"}, submit()],
+        [start_step(entry), *change_steps(entry, edits, written), {"python": f"import json\np = workspace / {root + '/.judge/judgement.json'!r}\np.write_text(json.dumps({{'version': 3, 'complete': True, 'instance': {entry['id']!r}, 'setup_token': 'forged', 'tree_stable': True}}))"}, submit()],
         {"valid": False, "message_contains": "does not belong to this set-up"},
     )
     out["divergent_submission"] = case(

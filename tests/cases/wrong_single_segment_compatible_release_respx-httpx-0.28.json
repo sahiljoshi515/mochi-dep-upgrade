@@ -1,0 +1,83 @@
+{
+ "note": "The requirement uses ~= with one release segment, which PEP 440 does not allow: edit_file refuses it with the reason; written behind the tools' back, the verdict gives that reason first.",
+ "task": "upgrade-dependency",
+ "arguments": {
+  "instance": "respx-httpx-0.28"
+ },
+ "steps": [
+  {
+   "tool": "start_upgrade",
+   "arguments": {
+    "instance": "respx-httpx-0.28"
+   },
+   "save_as": "start"
+  },
+  {
+   "tool": "edit_file",
+   "arguments": {
+    "edits": [
+     {
+      "path": "dep-upgrade/respx-httpx-0.28/setup.py",
+      "old": "httpx>=0.25.0,<0.28.0",
+      "new": "httpx~=0"
+     }
+    ],
+    "then": "sync_and_test"
+   },
+   "save_as": "edited",
+   "expect_error": true
+  },
+  {
+   "python": "p = workspace / 'dep-upgrade/respx-httpx-0.28/setup.py'\np.write_text(p.read_text().replace('httpx>=0.25.0,<0.28.0', 'httpx~=0'))"
+  },
+  {
+   "tool": "edit_file",
+   "arguments": {
+    "edits": [
+     {
+      "path": "dep-upgrade/respx-httpx-0.28/respx/mocks.py",
+      "old": "            request.method,\n",
+      "new": "            method,\n"
+     },
+     {
+      "path": "dep-upgrade/respx-httpx-0.28/respx/mocks.py",
+      "old": "        request = kwargs[\"request\"]\n        raw_url = (\n",
+      "new": "        request = kwargs[\"request\"]\n        method = (\n            request.method.decode(\"ascii\")\n            if isinstance(request.method, bytes)\n            else request.method\n        )\n        raw_url = (\n"
+     }
+    ],
+    "then": "nothing"
+   },
+   "save_as": "edited"
+  },
+  {
+   "tool": "judge",
+   "arguments": {
+    "instance": "respx-httpx-0.28"
+   },
+   "save_as": "judged"
+  },
+  {
+   "tool": "submit",
+   "arguments": {
+    "instance": "respx-httpx-0.28",
+    "dependency": "httpx",
+    "from_version": "0.27.2",
+    "to_version": "0.28.1",
+    "requirement": "httpx~=0",
+    "changed_files": [
+     "respx/mocks.py",
+     "setup.py"
+    ],
+    "migration": [
+     "Raised httpx to admit 0.28.1 in setup.py",
+     "Migrated respx/mocks.py to the httpx 0.28.1 API"
+    ]
+   }
+  }
+ ],
+ "answer": "Upgraded, judged and submitted.",
+ "expect": {
+  "valid": false,
+  "message_contains": "~= needs at least two release segments"
+ }
+}

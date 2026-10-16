@@ -47,6 +47,20 @@ def copy_tree(source: Path, dest: Path) -> Path:
     return dest
 
 
+def suite_env(tree: Path, entry: dict, scratch: Path, *, first: list[str] | None = None) -> dict[str, str]:
+    """The environment the project's code runs in when judged: no proxy (tests never reach the network;
+    under a sandbox, direct connections are blocked too), the instance's variables (None unsets one),
+    and PYTHONPATH with ``first`` and then the tree's path entries."""
+    env = {key: value for key, value in env_for(scratch).items() if key.lower() not in PROXY_VARIABLES}
+    for key, value in entry.get("env", {}).items():
+        if value is None:
+            env.pop(key, None)
+        else:
+            env[key] = value
+    env["PYTHONPATH"] = os.pathsep.join([*(first or []), *(str((tree / entry_path).resolve()) for entry_path in entry.get("path_entries", ["."]))])
+    return env
+
+
 def run_suite(tree: Path, entry: dict, scratch: Path, *, rundir: Path, targets: list[str], timeout: float, hidden: tuple[Path, ...] = (), isolate: bool = False) -> TestRun:
     """pytest on ``targets`` (relative to ``tree``) with the scratch venv's Python; ``rundir`` holds
     the recorder and its report. Paths are resolved first: pytest names tests relative to its
@@ -64,7 +78,6 @@ def run_suite(tree: Path, entry: dict, scratch: Path, *, rundir: Path, targets: 
         f"--rootdir={tree}", f"--basetemp={rundir / 'basetemp'}",
         *targets,
     ]
-    paths = [str(rundir)] + [str((tree / entry_path).resolve()) for entry_path in entry.get("path_entries", ["."])]
     base_env = env_for(scratch)
     if entry.get("install_project"):
         # Some projects' tests need the project installed (its metadata, entry points, subprocesses
@@ -77,14 +90,7 @@ def run_suite(tree: Path, entry: dict, scratch: Path, *, rundir: Path, targets: 
         )
         if not installed.ok:
             return TestRun(command="uv pip install --no-deps .", exit_status=installed.code, tail=scrub(installed.tail, tree, *hidden, env=scratch), seconds=installed.seconds, timed_out=installed.timed_out)
-    # Tests never reach the network: no proxy (under a sandbox, direct connections are blocked too).
-    env = {key: value for key, value in base_env.items() if key.lower() not in PROXY_VARIABLES}
-    for key, value in entry.get("env", {}).items():
-        if value is None:
-            env.pop(key, None)
-        else:
-            env[key] = value
-    env["PYTHONPATH"] = os.pathsep.join(paths)
+    env = suite_env(tree, entry, scratch, first=[str(rundir)])
     if isolate and shutil.which("sandbox-exec"):
         # The oracle runs outside NanoAgent's sandbox, whose macOS profile lets tests open no socket at all (no DNS,
         # no loopback server, no Unix socket): deny the same, so a test that needs one is never public.

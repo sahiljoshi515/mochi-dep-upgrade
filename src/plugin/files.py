@@ -41,6 +41,7 @@ from plugin.common import (
 )
 from plugin.project import PRISTINE_DIR, is_editable, ready_root
 from plugin.spec import read as read_spec
+from verifier.checks import forbidden_problem
 from verifier.trees import SKIP
 
 MAX_ENTRIES = 200
@@ -53,8 +54,6 @@ MAX_EDITS = 10
 MAX_EDIT_TEXT = 8 * 1024
 MAX_READ = 2 * 1024 * 1024
 MAX_SEARCH_FILES = 3000
-# Names a written file may not have: pytest or the build would load them as configuration.
-FORBIDDEN_NAMES = frozenset({"conftest.py", "pytest.ini", "tox.ini", "setup.cfg", "sitecustomize.py", "usercustomize.py"})
 
 
 def _clamp(value: int, low: int, high: int) -> int:
@@ -174,8 +173,7 @@ def target(workspace: Path, rel: str) -> tuple[Path, Path, dict, str]:
         raise ToolError(f"only files inside {WORKSPACE_PREFIX}/<instance>/ may change: {rel}")
     root, entry = ready_root(workspace, parts[1])
     inside = Path(*parts[2:]).as_posix()
-    is_spec = inside == entry["spec"]["file"]
-    if any(part.startswith(".") for part in parts[2:]) or (path.name in FORBIDDEN_NAMES and not is_spec):
+    if forbidden_problem(inside, entry["spec"]["file"]):
         raise ToolError(f"that file may not change: {rel}")
     if not is_editable(entry, inside):
         raise ToolError(f"{inside} may not change: only {entry['spec']['file']} and {', '.join(entry['source_globs'])}")

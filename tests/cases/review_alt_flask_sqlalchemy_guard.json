@@ -1,0 +1,60 @@
+{
+ "note": "From the independent review, an alternative correct migration: one combined guard+hasattr line instead of upstream's two edits",
+ "task": "upgrade-dependency",
+ "arguments": {
+  "instance": "flask-sqlalchemy-sqlalchemy-2"
+ },
+ "steps": [
+  {
+   "tool": "start_upgrade",
+   "arguments": {
+    "instance": "flask-sqlalchemy-sqlalchemy-2"
+   },
+   "save_as": "start"
+  },
+  {
+   "tool": "edit_file",
+   "arguments": {
+    "edits": [
+     {
+      "path": "dep-upgrade/flask-sqlalchemy-sqlalchemy-2/src/flask_sqlalchemy/extension.py",
+      "old": "            if name in mod.__all__:\n",
+      "new": "            if not name.startswith(\"_\") and hasattr(mod, name):\n"
+     }
+    ],
+    "then": "sync_and_test"
+   },
+   "save_as": "edited"
+  },
+  {
+   "tool": "judge",
+   "arguments": {
+    "instance": "flask-sqlalchemy-sqlalchemy-2"
+   },
+   "save_as": "judged"
+  },
+  {
+   "tool": "submit",
+   "arguments": {
+    "instance": "flask-sqlalchemy-sqlalchemy-2",
+    "dependency": "SQLAlchemy",
+    "from_version": "1.4.46",
+    "to_version": "2.0.0",
+    "requirement": "SQLAlchemy>=1.4.18",
+    "changed_files": [
+     "src/flask_sqlalchemy/extension.py"
+    ],
+    "migration": [
+     "Kept SQLAlchemy's requirement (it already admits 2.0.0) and re-locked to 2.0.0",
+     "Migrated src/flask_sqlalchemy/extension.py to the SQLAlchemy 2.0.0 API"
+    ]
+   }
+  }
+ ],
+ "answer": "Upgraded, judged and submitted.",
+ "expect": {
+  "valid": true,
+  "score_min": 1.0,
+  "message_contains": "All 19 checks hold"
+ }
+}

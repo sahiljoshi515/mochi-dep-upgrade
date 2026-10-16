@@ -35,7 +35,9 @@ from plugin.common import (
 )
 from plugin.spec import read as read_spec
 from verifier import catalog
+from verifier.locks import read_lock, versions_of
 from verifier.trees import counts, matches_any, tree_entries, tree_hash
+from verifier.versions import canonical_name
 
 READY = "ready.json"
 PRISTINE = "pristine.json"
@@ -90,10 +92,19 @@ def pin_upgrade(given: UpgradeInput, workspace: Path) -> PinOutput:
     )
 
 
+def _moving(entry: dict) -> str:
+    """The packages the upgrade may move, each with where it was and where upstream's upgrade put it."""
+    base = versions_of(read_lock(catalog.lock_text(entry, "base")))
+    gold = versions_of(read_lock(catalog.lock_text(entry, "gold")))
+    parts = [f"{name} (stays at {','.join(base.get(canonical_name(name), []))} or moves to {','.join(gold.get(canonical_name(name), []))})" for name in entry.get("allowed_collateral", [])]
+    parts += [f"{name} (may come in at {','.join(gold.get(canonical_name(name), []))})" for name in entry.get("allowed_new", [])]
+    return "; ".join(parts) or "none"
+
+
 def rules_for(entry: dict) -> list[str]:
     limits = entry["limits"]
     spec = entry["spec"]
-    moving = ", ".join(entry.get("allowed_collateral", []) + entry.get("allowed_new", [])) or "none"
+    moving = _moving(entry)
     exclude = f" and exclude {entry['from_version']}" if spec.get("must_exclude_old") else ""
     return [
         f"Goal: {entry['dependency']} {entry['from_version']} -> exactly {entry['target_version']}, with the project building and its tests passing on the new version.",
@@ -105,9 +116,16 @@ def rules_for(entry: dict) -> list[str]:
         (
             f"Raise {entry['dependency']}'s requirement so it admits {entry['target_version']}{exclude}; sync resolves the spec as of "
             f"{entry['resolution_date'][:10]} with every other package held, and must lock exactly {entry['target_version']}. "
-            f"Keep the other requirements as written; packages that may move with the upgrade: {moving}."
+            + (
+                f"Keep the other requirements as written, except that packages the upgrade may move can stay or move as upstream's did: {moving}. Every other locked package keeps its version."
+                if moving != "none"
+                else "Keep the other requirements as written; every other locked package keeps its version."
+            )
         ),
-        "No shims: no warning filters, no monkeypatching or re-exporting the library's old API, no sys.modules tricks, no version or test sniffing; migrate the code to the new API.",
+        (
+            "No shims: no warning filters or other use of the warnings module, no monkeypatching or re-adding the library's old API, no sys.modules or import tricks, "
+            "no version or test sniffing, however spelled; migrate the code to the new API. The judge reads the added code and also imports the project to see what it changes."
+        ),
         (
             f"Judging runs the repository's own tests ({len(entry['public']['ids'])} judged, {len(entry['public']['excluded'])} excluded as failing for "
             "reasons of their own) and hidden tests: upstream's own tests after its upgrade. It also re-locks, installs and builds the wheel."

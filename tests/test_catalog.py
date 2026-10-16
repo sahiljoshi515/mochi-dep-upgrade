@@ -11,6 +11,7 @@ from contract import InstanceId
 from verifier import catalog
 from verifier.checks import is_sha
 from verifier.locks import read_lock
+from verifier.shims import RULES
 from verifier.specs import KINDS
 from verifier.trees import glob_regex
 from verifier.versions import admits, canonical_name, parse_requirement
@@ -41,8 +42,8 @@ def test_entry_is_consistent(item: dict):
     assert all(test.split("::")[0] in item["hidden"]["targets"] for test in item["hidden"]["ids"])
     assert all(is_sha(sha) for sha in item["hidden"]["files"].values())
     assert item["breakage"]["public"] + item["breakage"]["hidden"] > 0
-    for pattern in item["forbidden"]:
-        re.compile(pattern)
+    assert set(item["shim_exempt"]) <= set(RULES) and isinstance(item["old_api"], list)
+    assert all(isinstance(finding, str) and "/" not in finding.split(" into ")[0] for finding in item["probe_expected"])
     editable = [item["spec"]["file"], *item["source_globs"]]
     assert all(any(glob_regex(glob).fullmatch(rel) for glob in editable) for rel in item["gold"]["files"])
     assert not any(glob_regex(glob).fullmatch(test.split("::")[0]) for glob in item["source_globs"] for test in item["public"]["ids"])

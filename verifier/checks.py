@@ -15,6 +15,20 @@ def result(valid, message, *, score=None, **details):
     return {"valid": valid, "score": float(valid) if score is None else score, "message": message, "details": details}
 
 
+# Names a changed file may not have, wherever it is: pytest, the build or the interpreter would load it as
+# configuration. The instance's spec file is exempt (setup.cfg can be the spec).
+FORBIDDEN_NAMES = frozenset({"conftest.py", "pytest.ini", "tox.ini", "setup.cfg", "sitecustomize.py", "usercustomize.py"})
+
+
+def forbidden_problem(inside, spec_file):
+    """Why a project-relative path may never change, whatever the instance's globs say, or None. The
+    tools (``plugin.files``) and the input verifier both ask this."""
+    parts = inside.split("/")
+    if any(part.startswith(".") for part in parts) or (parts[-1] in FORBIDDEN_NAMES and inside != spec_file):
+        return f"that file may not change: {inside}"
+    return None
+
+
 def path_problem(path, *, judge_ok=False):
     """What is wrong with a workspace-relative path, or None."""
     if not isinstance(path, str) or not path.strip() or "\0" in path or len(path) > 1024:

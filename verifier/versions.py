@@ -60,8 +60,16 @@ def parse_specifier(text):
         wildcard = version.endswith(".*")
         if wildcard and operator not in ("==", "!="):
             raise ValueError(f"a wildcard needs == or !=: {piece!r}")
-        if release(version[:-2] if wildcard else version) is None:
+        bare = version[:-2] if wildcard else version
+        parsed = release(bare)
+        if parsed is None:
             raise ValueError(f"not a version: {version!r}")
+        # PEP 440, as packaging and uv read it: a local label (+...) only with == or !=, and a
+        # compatible release (~=) names at least two release segments.
+        if "+" in version and operator not in ("==", "!="):
+            raise ValueError(f"{operator} cannot take a local version (+...): {piece!r}")
+        if operator == "~=" and len(parsed) < 2:
+            raise ValueError(f"~= needs at least two release segments, as in ~={bare}.0: {piece!r}")
         parts.append((operator, version))
     return parts
 

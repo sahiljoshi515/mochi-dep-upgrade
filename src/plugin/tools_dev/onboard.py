@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import shutil
 import subprocess
 import sys
@@ -32,10 +31,14 @@ from pathlib import Path
 
 from plugin import envs, fetch
 from plugin.common import Budget, ToolError, sha256_bytes
+from plugin.probe import probe_tree
+from plugin.shims import code_problems as ast_problems
 from plugin.spec import read as read_spec
-from plugin.testing import copy_tree, run_suite
+from plugin.testing import copy_tree, run_suite, suite_env
 from verifier import catalog
 from verifier.locks import read_lock, versions_of
+from verifier.shims import OLD_API
+from verifier.shims import code_problems as token_problems
 from verifier.trees import added_lines, counts, matches_any, text_lines, tree_entries, tree_hash
 from verifier.versions import admits, canonical_name, parse_requirement
 
@@ -47,30 +50,32 @@ MAX_FILES = 2000
 MAX_BYTES = 20 * 1024 * 1024
 MAX_EXCLUDED_SHARE = 0.20
 RUNS = 2
-GENERIC_FORBIDDEN = [
-    r"\bwarnings\.(?:filterwarnings|simplefilter|catch_warnings|resetwarnings)\b",
-    r"\bsys\.modules\b",
-    r"\bimportlib\.reload\b",
-    r"\b__import__\(",
-    r"PYTEST_CURRENT_TEST",
-    r"""["']pytest["']\s+in\s+sys\.modules""",
-    r"\bsys\.argv\b",
-    r"\bpkg_resources\b",
-]
 
 
-def library_forbidden(recipe: dict) -> list[str]:
-    names = "|".join(recipe["import_names"])
-    dist = recipe["dependency"]
-    patterns = [
-        rf"\bsetattr\(\s*(?:{names})\b",
-        rf"^\s*(?:{names})\.[A-Za-z_][A-Za-z0-9_.]*\s*=(?!=)",
-        rf"\b(?:{names})\.__version__\b",
-        rf"""\bversion\(\s*["']{dist}["']\s*\)""",
-    ]
-    if canonical_name(dist) == "pydantic":
-        patterns.append(r"\bpydantic\.v1\b")
-    return patterns + recipe.get("forbidden_extra", [])
+def probe_expectations(entry: dict, c_dir: Path, env_dir: Path, files: list[str]) -> list[str]:
+    """What importing upstream's own tree does (``plugin.probe``) in the post-upgrade environment
+    ``env_dir``: the instance expects it of every submission."""
+    tree = copy_tree(c_dir, env_dir.parent / "runs" / "probe-tree").resolve()
+    changed = [{"path": rel, "status": "modified"} for rel in files]
+    found = probe_tree(tree, entry, changed, python=str(envs.venv_python(env_dir)), env=suite_env(tree, entry, env_dir), rundir=env_dir.parent / "runs" / "probe", timeout=lambda: 120.0)
+    # A changed submodule may not import on the new version (pydantic-yaml's v1 examples); a package must.
+    if found.get("timed_out") or any(finding.startswith(("leaves ", "could not be probed")) for finding in found["findings"]):
+        raise SystemExit(f"{entry['id']}: upstream's tree does not import cleanly for the probe: {found}")
+    return found["findings"]
+
+
+def shim_exemptions(entry: dict, base_dir: Path, c_dir: Path, files: list[str]) -> list[str]:
+    """The shim rules upstream's own change breaks, read either way (``plugin.shims`` with ast, and
+    ``verifier.shims`` from the tokens): an agent that migrates the same way must not fail them, so the
+    instance exempts them."""
+    rules = set()
+    for rel in files:
+        after = c_dir / rel
+        if rel.endswith(".py") and after.is_file():
+            before = (base_dir / rel).read_bytes() if (base_dir / rel).is_file() else b""
+            for read in (ast_problems, token_problems):
+                rules |= {rule for _, rule, _ in read(before, after.read_bytes(), entry["import_names"], entry.get("old_api", []))}
+    return sorted(rules)
 
 
 def log(message: str) -> None:
@@ -329,8 +334,9 @@ def onboard(recipe: dict, work: Path) -> dict:
         "max_new_files": max(2, new_files),
         "max_added_lines": max(150, 3 * len(gold_added)),
     }
-    patterns = GENERIC_FORBIDDEN + library_forbidden(recipe)
-    entry["forbidden"] = [pattern for pattern in patterns if not any(re.search(pattern, line) for line in gold_added)]
+    entry["old_api"] = OLD_API.get(canonical_name(recipe["dependency"]), [])
+    entry["shim_exempt"] = shim_exemptions(entry, base_dir, c_dir, gold_files)
+    entry["probe_expected"] = probe_expectations(entry, c_dir, folder / "env-new", [rel for rel in gold_files if rel != spec["file"]])
     entry["gold"] = {"files": gold_files, "added_lines": len(gold_added)}
     entry["fit"] = "local"
     entry["timings"] = {}
@@ -356,13 +362,35 @@ def write(entry: dict, work: Path) -> None:
     path.write_text(json.dumps(data, indent=1, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def refresh_shims(ids: list[str], work: Path) -> int:
+    """Recompute ``old_api``, ``shim_exempt`` and ``probe_expected`` of catalogued instances from the
+    base and upstream trees and the post-upgrade environment an earlier oracle run left under ``work``
+    (nothing else in their entries changes)."""
+    path = DATA / "catalog.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for item in data["instances"]:
+        if item["id"] not in ids:
+            continue
+        item.pop("forbidden", None)
+        item["old_api"] = OLD_API.get(canonical_name(item["dependency"]), [])
+        files = [rel for rel in item["gold"]["files"] if rel != item["spec"]["file"]]
+        item["shim_exempt"] = shim_exemptions(item, work / item["id"] / "base", work / item["id"] / "c", files)
+        item["probe_expected"] = probe_expectations(item, work / item["id"] / "c", work / item["id"] / "env-new", files)
+        log(f"[{item['id']}] old_api {item['old_api']}, shim_exempt {item['shim_exempt']}, probe_expected {len(item['probe_expected'])}: {item['probe_expected'][:3]}")
+    path.write_text(json.dumps(data, indent=1, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("ids", nargs="+")
     parser.add_argument("--work", default=str(WORK))
     parser.add_argument("--write", action="store_true")
+    parser.add_argument("--shims-only", action="store_true", help="only recompute old_api, shim_exempt and probe_expected of catalogued instances, from the trees and environments an earlier run left in --work")
     args = parser.parse_args(argv)
     recipes = {item["id"]: item for item in json.loads(RECIPES.read_text(encoding="utf-8"))}
+    if args.shims_only:
+        return refresh_shims(args.ids, Path(args.work))
     failures = 0
     for recipe_id in args.ids:
         try:

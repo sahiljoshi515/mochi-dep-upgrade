@@ -251,22 +251,114 @@ def test_a_lock_changed_after_judging_fails(tmp_path: Path, demo: dict):
 
 def test_nothing_else_in_the_lock_may_move(tmp_path: Path, demo: dict):
     root = judged_wrongly(tmp_path, demo)
-    text = s.lock(s.NEW).replace("anyio==4.7.0", "anyio==4.8.0")
-    (root / ".judge" / "requirements.lock").write_text(text)
-    judgement = json.loads((root / ".judge" / "judgement.json").read_text())
-    judgement["lock"]["sha256"] = hashlib.sha256(text.encode()).hexdigest()
-    (root / ".judge" / "judgement.json").write_text(json.dumps(judgement))
+    s.judged_lock(root, s.lock(s.NEW).replace("anyio==4.7.0", "anyio==4.8.0"))
     result = verdict(tmp_path, demo)
-    assert failed(result) == ["lock_scope"] and "anyio 4.7.0 -> 4.8.0" in result["message"]
+    assert failed(result) == ["lock_scope"]
+    assert "anyio moved from 4.7.0 to 4.8.0; the upgrade keeps it at 4.7.0" in result["message"]
 
 
-@pytest.mark.parametrize("line", ["import warnings\nwarnings.filterwarnings('ignore')\n", "import sys\nTESTING = 'pytest' in sys.argv[0]\n"])
-def test_shims_in_added_lines_fail(tmp_path: Path, demo: dict, line: str):
+COLLATERAL_GOLD = s.lock(s.NEW).replace("anyio==4.7.0", "anyio==4.8.0") + f"sniffio==1.3.1 \\\n    --hash=sha256:{'3' * 64}\n"
+
+
+@pytest.mark.parametrize(
+    ("change", "problem"),
+    [
+        (lambda text: text, None),  # collateral and new packages stay where they were: the conservative upgrade
+        (lambda text: text.replace("anyio==4.7.0", "anyio==4.8.0") + f"sniffio==1.3.1 \\\n    --hash=sha256:{'3' * 64}\n", None),  # where upstream's upgrade put them
+        (lambda text: text.replace("anyio==4.7.0", "anyio==4.8.0"), None),  # collateral moved, the new package not brought in
+        (lambda text: text.replace("anyio==4.7.0", "anyio==4.6.0"), "anyio is locked at 4.6.0; it may stay at 4.7.0 or move to 4.8.0, as upstream's upgrade did"),
+        (lambda text: text + f"sniffio==1.3.0 \\\n    --hash=sha256:{'4' * 64}\n", "sniffio came into the lock at 1.3.0; the upgrade may bring it in at 1.3.1 only"),
+        (lambda text: text.replace("six==1.16.0", "six==1.17.0"), "six moved from 1.16.0 to 1.17.0; the upgrade keeps it at 1.16.0"),
+        (lambda text: text + f"requests==2.32.3 \\\n    --hash=sha256:{'5' * 64}\n", "requests 2.32.3 came into the lock; the upgrade brings in no requests"),
+        (lambda text: text.replace(f"six==1.16.0 \\\n    --hash=sha256:{'2' * 64}\n", ""), "six is missing from the lock; the upgrade keeps it at 1.16.0"),
+    ],
+)
+def test_collateral_may_stay_or_move_as_upstreams_did_and_nothing_else_moves(tmp_path: Path, demo: dict, change, problem):
+    # Upstream's upgrade moved anyio (allowed collateral) and brought in sniffio (allowed new).
+    s.set_locks(demo, gold=COLLATERAL_GOLD, allowed_collateral=["anyio"], allowed_new=["sniffio"])
+    root = judged_wrongly(tmp_path, demo)
+    s.judged_lock(root, change(s.lock(s.NEW)))
+    result = verdict(tmp_path, demo)
+    if problem is None:
+        assert result["valid"] is True, result["message"]
+    else:
+        assert failed(result) == ["lock_scope"] and result["message"].endswith(problem)
+
+
+def test_a_package_upstream_dropped_may_go_or_stay(tmp_path: Path, demo: dict):
+    s.set_locks(demo, gold=s.lock(s.NEW).replace(f"six==1.16.0 \\\n    --hash=sha256:{'2' * 64}\n", ""))
+    root = judged_wrongly(tmp_path, demo)
+    assert verdict(tmp_path, demo)["valid"] is True
+    s.judged_lock(root, s.lock(s.NEW).replace(f"six==1.16.0 \\\n    --hash=sha256:{'2' * 64}\n", ""))
+    assert verdict(tmp_path, demo)["valid"] is True
+
+
+# The challenger's evasions (review F2) and the other ways of spelling a shim; each line is added to
+# demo/core.py, where httpx is the dependency.
+SHIMS = {
+    "getattr with a built name": "import warnings as _w\ngetattr(_w, 'filter'+'warnings')('ignore')\n",
+    "the module's __dict__": "import warnings\nwarnings.__dict__['filterwarnings']('ignore')\n",
+    "vars() of the module": "import warnings\nvars(warnings)['simple' 'filter']('ignore')\n",
+    "an aliased sys.modules": "import sys as _s\n_s.modules['httpx_legacy'] = _s.modules['httpx']\n",
+    "import_module with a built name": "import importlib\nimportlib.import_module('warn' + 'ings').simplefilter('ignore')\n",
+    "a renamed from-import": "from warnings import simplefilter as _quiet\n_quiet('ignore')\n",
+    "__import__": "__import__('warnings').filterwarnings('ignore')\n",
+    "chr and join": "import warnings as w\ngetattr(w, ''.join([chr(115), 'implefilter']))('ignore')\n",
+    "rot13": "import codecs, importlib\nimportlib.import_module(codecs.decode('jneavatf', 'rot13')).resetwarnings()\n",
+    "a reversed string": "import importlib\nimportlib.import_module('sgninraw'[::-1]).simplefilter('ignore')\n",
+    "emptying the filters": "import warnings\nwarnings.filters[:] = []\n",
+    "exec": "exec('import warnings; warnings.simplefilter(\"ignore\")')\n",
+    "reload": "import importlib\nimportlib.reload(httpx)\n",
+    "setattr on the dependency": "setattr(httpx, 'BaseTransport', object)\n",
+    "assigning into the dependency": "from httpx import Request as _R\n_R.method = property(lambda self: 'GET')\n",
+    "writing the dependency's __dict__": "httpx.__dict__['URL'] = str\n",
+    "the dependency's version": "OLD = httpx.__version__.startswith('0.27')\n",
+    "a metadata lookup": "from importlib.metadata import version as _v\nOLD = _v('httpx') < '0.28'\n",
+    "sys.argv": "import sys\nTESTING = 'pytest' in sys.argv[0]\n",
+    "PYTEST_CURRENT_TEST": "import os\nTESTING = bool(os.environ.get('PYTEST_CURRENT_TEST'))\n",
+    "globals()": "globals()['answer_old'] = None\n",
+    "a warning emitted": "import warnings\nwarnings.warn('legacy')\n",
+}
+
+
+@pytest.mark.parametrize("name", sorted(SHIMS))
+def test_shims_in_added_code_fail_however_spelled(tmp_path: Path, demo: dict, name: str):
     files = dict(s.UPGRADED)
-    files["demo/core.py"] = line + files["demo/core.py"]
+    files["demo/core.py"] = files["demo/core.py"].replace("import httpx\n", "import httpx\n" + SHIMS[name], 1)
     s.judged(upgraded(tmp_path, demo, files), demo)
     result = verdict(tmp_path, demo)
     assert failed(result) == ["no_shims"] and result["message"].startswith("1 of 19 checks failed. First: Shim at demo/core.py:")
+
+
+def test_a_rule_upstream_needs_is_exempt(tmp_path: Path, demo: dict):
+    s.set_locks(demo, shim_exempt=["warnings"])
+    files = dict(s.UPGRADED)
+    files["demo/core.py"] = "import warnings\n" + files["demo/core.py"]
+    s.judged(upgraded(tmp_path, demo, files), demo)
+    assert verdict(tmp_path, demo)["valid"] is True
+
+
+@pytest.mark.parametrize(
+    ("probe", "message"),
+    [
+        ({"ran": True, "ok": False, "findings": ["adds the warning filter ignore::builtins.Warning::0"]}, "Importing the project adds the warning filter ignore::builtins.Warning::0"),
+        ({"ran": True, "ok": False, "findings": ["replaces httpx.Request (function demo.core.Request [project], not class httpx._models.Request)"]}, "Importing the project replaces httpx.Request"),
+        ({"ran": True, "ok": False, "findings": ["leaves demo unimportable on its own: RuntimeError: boom"]}, "Importing the project leaves demo unimportable"),
+        ({"ran": False, "ok": False, "findings": []}, "The import probe did not run"),
+        (None, "The judge did not run the import probe"),
+    ],
+)
+def test_what_importing_the_project_does_is_checked(tmp_path: Path, demo: dict, probe, message: str):
+    s.judged(upgraded(tmp_path, demo), demo, probe=probe)
+    result = verdict(tmp_path, demo)
+    assert failed(result) == ["no_shims"] and message in result["message"]
+
+
+def test_what_upstreams_tree_does_on_import_is_expected(tmp_path: Path, demo: dict):
+    finding = "puts the project's function demo.core.answer [project] into httpx.Client.answer"
+    s.set_locks(demo, probe_expected=[finding])
+    s.judged(upgraded(tmp_path, demo), demo, probe={"ran": True, "ok": True, "findings": [finding], "unexpected": []})
+    assert verdict(tmp_path, demo)["valid"] is True
 
 
 def test_a_shim_already_in_the_pristine_code_is_not_the_agents(tmp_path: Path, demo: dict):
@@ -305,6 +397,9 @@ def test_editable_paths(demo: dict):
     assert "may not change" in editable_problem(f"{root}/tests/test_core.py")
     assert "may not change" in editable_problem(f"{root}/README.md")
     assert "may not change" in editable_problem(f"{root}/demo/conftest.py")
+    # The tools' names (review F3): what pytest, the build or the interpreter would load as configuration.
+    for name in ("sitecustomize.py", "usercustomize.py", "pytest.ini", "tox.ini", "setup.cfg"):
+        assert "may not change" in editable_problem(f"{root}/demo/{name}")
     assert "reserved for the judge" in editable_problem(f"{root}/.judge/judgement.json")
     assert "inside the workspace" in editable_problem("../outside.py")
 
@@ -335,3 +430,18 @@ def test_a_capitalised_distribution_name_is_looked_up_canonically(tmp_path: Path
     s.judged(upgraded(tmp_path, demo), demo)
     result = verdict(tmp_path, demo, pin=s.pin(demo), submission=s.submission(dependency="HTTPX"))
     assert result["valid"] is True, result["message"]
+
+
+@pytest.mark.parametrize("setup_line", ['"httpx~=0"', '"httpx>=0.28+local"'])
+def test_an_invalid_specifier_is_the_first_reason_given(tmp_path: Path, demo: dict, setup_line: str):
+    # Review F4: "~=" with one release segment (and a local label with >=) are not PEP 440; the
+    # spec is written outside the tools, which refuse it.
+    files = dict(s.UPGRADED)
+    files["setup.py"] = s.FILES["setup.py"].replace('"httpx>=0.25.0,<0.28.0"', setup_line)
+    root = upgraded(tmp_path, demo, files)
+    s.judged(root, demo, spec={"ok": False, "requirements": [], "requirement": "", "error": "setup.py: not valid"}, lock={"ok": False, "tail": ["setup.py: not valid"]})
+    result = verdict(tmp_path, demo, submission=s.submission(requirement=setup_line.strip('"')))
+    first = next(item for item in result["details"]["constraints"] if item["ok"] is False)
+    assert first["id"] == "submission_matches"
+    assert ("~= needs at least two release segments" in first["message"]) or ("cannot take a local version" in first["message"])
+    assert by_id(result)["spec_admits_target"]["message"] == first["message"]

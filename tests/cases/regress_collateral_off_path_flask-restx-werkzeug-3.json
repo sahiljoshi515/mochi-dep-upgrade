@@ -1,0 +1,143 @@
+{
+ "note": "Review F1's other side: Flask is an allowed collateral package, but capped below its pre-upgrade version it locks at 2.3.2, which neither the pre-upgrade lock nor upstream's has: lock_scope says so first.",
+ "task": "upgrade-dependency",
+ "arguments": {
+  "instance": "flask-restx-werkzeug-3"
+ },
+ "steps": [
+  {
+   "tool": "start_upgrade",
+   "arguments": {
+    "instance": "flask-restx-werkzeug-3"
+   },
+   "save_as": "start"
+  },
+  {
+   "tool": "edit_file",
+   "arguments": {
+    "edits": [
+     {
+      "path": "dep-upgrade/flask-restx-werkzeug-3/requirements/install.pip",
+      "old": "werkzeug!=2.0.0, <3.0.0",
+      "new": "werkzeug!=2.0.0"
+     },
+     {
+      "path": "dep-upgrade/flask-restx-werkzeug-3/flask_restx/api.py",
+      "old": "            endpoint = _endpoint_from_view_func(view_func)\n",
+      "new": "            endpoint = endpoint_from_view_func(view_func)\n"
+     },
+     {
+      "path": "dep-upgrade/flask-restx-werkzeug-3/flask_restx/api.py",
+      "old": "                    default_data = {\"message\": getattr(e, \"description\", code.phrase)}\n",
+      "new": "                    default_data = {\"message\": e.description or code.phrase}\n"
+     },
+     {
+      "path": "dep-upgrade/flask-restx-werkzeug-3/flask_restx/api.py",
+      "old": "                code = HTTPStatus(e.code)\n",
+      "new": "                code = None\n                if e.code is not None:\n                    code = HTTPStatus(e.code)\n                elif e.response is not None:\n                    code = HTTPStatus(e.response.status_code)\n"
+     },
+     {
+      "path": "dep-upgrade/flask-restx-werkzeug-3/flask_restx/api.py",
+      "old": "from ._http import HTTPStatus\n\n",
+      "new": "from ._http import HTTPStatus\n\nendpoint_from_view_func = import_check_view_func()\n\n\n"
+     },
+     {
+      "path": "dep-upgrade/flask-restx-werkzeug-3/flask_restx/api.py",
+      "old": "from .utils import default_id, camel_to_dash, unpack\n",
+      "new": "from .utils import (\n    default_id,\n    camel_to_dash,\n    unpack,\n    import_check_view_func,\n    BaseResponse,\n)\n"
+     },
+     {
+      "path": "dep-upgrade/flask-restx-werkzeug-3/flask_restx/api.py",
+      "old": "from werkzeug import __version__ as werkzeug_version\n\nif werkzeug_version.split(\".\")[0] >= \"2\":\n    from werkzeug.wrappers import Response as BaseResponse\nelse:\n    from werkzeug.wrappers import BaseResponse\n\n",
+      "new": ""
+     },
+     {
+      "path": "dep-upgrade/flask-restx-werkzeug-3/flask_restx/api.py",
+      "old": "try:\n    from flask.helpers import _endpoint_from_view_func\nexcept ImportError:\n    from flask.scaffold import _endpoint_from_view_func\n",
+      "new": ""
+     },
+     {
+      "path": "dep-upgrade/flask-restx-werkzeug-3/requirements/install.pip",
+      "old": "Flask>=0.8, !=2.0.0, <3.0.0",
+      "new": "Flask>=0.8, !=2.0.0, <2.3.3"
+     }
+    ],
+    "then": "nothing"
+   }
+  },
+  {
+   "tool": "edit_file",
+   "arguments": {
+    "edits": [
+     {
+      "path": "dep-upgrade/flask-restx-werkzeug-3/flask_restx/resource.py",
+      "old": "from .utils import unpack\n",
+      "new": "from .utils import unpack, BaseResponse\n"
+     },
+     {
+      "path": "dep-upgrade/flask-restx-werkzeug-3/flask_restx/resource.py",
+      "old": "if werkzeug_version.split(\".\")[0] >= \"2\":\n    from werkzeug.wrappers import Response as BaseResponse\nelse:\n    from werkzeug.wrappers import BaseResponse\n",
+      "new": ""
+     },
+     {
+      "path": "dep-upgrade/flask-restx-werkzeug-3/flask_restx/resource.py",
+      "old": "from werkzeug import __version__ as werkzeug_version\n",
+      "new": ""
+     },
+     {
+      "path": "dep-upgrade/flask-restx-werkzeug-3/flask_restx/utils.py",
+      "old": "        raise ValueError(\"Too many response values\")\n",
+      "new": "        raise ValueError(\"Too many response values\")\n\n\ndef to_view_name(view_func: typing.Callable) -> str:\n    \"\"\"Helper that returns the default endpoint for a given\n    function. This always is the function name.\n\n    Note: copy of simple flask internal helper\n    \"\"\"\n    assert view_func is not None, \"expected view func if endpoint is not provided.\"\n    return view_func.__name__\n\n\ndef import_check_view_func():\n    \"\"\"\n    Resolve import flask _endpoint_from_view_func.\n\n    Show warning if function cannot be found and provide copy of last known implementation.\n\n    Note: This helper method exists because reoccurring problem with flask function, but\n    actual method body remaining the same in each flask version.\n    \"\"\"\n    import importlib.metadata\n\n    flask_version = importlib.metadata.version(\"flask\").split(\".\")\n    try:\n        if flask_version[0] == \"1\":\n            from flask.helpers import _endpoint_from_view_func\n        elif flask_version[0] == \"2\":\n            from flask.scaffold import _endpoint_from_view_func\n        elif flask_version[0] == \"3\":\n            from flask.sansio.scaffold import _endpoint_from_view_func\n        else:\n            warnings.simplefilter(\"once\", FlaskCompatibilityWarning)\n            _endpoint_from_view_func = None\n    except ImportError:\n        warnings.simplefilter(\"once\", FlaskCompatibilityWarning)\n        _endpoint_from_view_func = None\n    if _endpoint_from_view_func is None:\n        _endpoint_from_view_func = to_view_name\n    return _endpoint_from_view_func\n"
+     },
+     {
+      "path": "dep-upgrade/flask-restx-werkzeug-3/flask_restx/utils.py",
+      "old": "    \"unpack\",\n)\n\n",
+      "new": "    \"unpack\",\n    \"BaseResponse\",\n    \"import_check_view_func\",\n)\n\n\ndef import_werkzeug_response():\n    \"\"\"Resolve `werkzeug` `Response` class import because\n    `BaseResponse` was renamed in version 2.* to `Response`\"\"\"\n    import importlib.metadata\n\n    werkzeug_major = int(importlib.metadata.version(\"werkzeug\").split(\".\")[0])\n    if werkzeug_major < 2:\n        from werkzeug.wrappers import BaseResponse\n\n        return BaseResponse\n\n    from werkzeug.wrappers import Response\n\n    return Response\n\n\nBaseResponse = import_werkzeug_response()\n\n\nclass FlaskCompatibilityWarning(DeprecationWarning):\n    pass\n\n"
+     },
+     {
+      "path": "dep-upgrade/flask-restx-werkzeug-3/flask_restx/utils.py",
+      "old": "import re\n\n",
+      "new": "import re\nimport warnings\nimport typing\n\n"
+     }
+    ],
+    "then": "sync_and_test"
+   },
+   "save_as": "edited"
+  },
+  {
+   "tool": "judge",
+   "arguments": {
+    "instance": "flask-restx-werkzeug-3"
+   },
+   "save_as": "judged"
+  },
+  {
+   "tool": "submit",
+   "arguments": {
+    "instance": "flask-restx-werkzeug-3",
+    "dependency": "Werkzeug",
+    "from_version": "2.3.8",
+    "to_version": "3.0.1",
+    "requirement": "werkzeug!=2.0.0",
+    "changed_files": [
+     "flask_restx/api.py",
+     "flask_restx/resource.py",
+     "flask_restx/utils.py",
+     "requirements/install.pip"
+    ],
+    "migration": [
+     "Raised Werkzeug to admit 3.0.1 in requirements/install.pip",
+     "Migrated flask_restx/api.py to the Werkzeug 3.0.1 API",
+     "Migrated flask_restx/resource.py to the Werkzeug 3.0.1 API",
+     "Migrated flask_restx/utils.py to the Werkzeug 3.0.1 API"
+    ]
+   }
+  }
+ ],
+ "answer": "Upgraded, judged and submitted.",
+ "expect": {
+  "valid": false,
+  "score_max": 0.99,
+  "message_contains": "flask is locked at 2.3.2; it may stay at 2.3.3 or move to 3.0.0"
+ }
+}

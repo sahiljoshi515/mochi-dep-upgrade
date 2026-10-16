@@ -1,0 +1,95 @@
+{
+ "note": "From the independent review: a partial migration (np.std on np.asarray(...) drops pandas' NaN skipping). The plugin and the review's own judge both find it wrong.",
+ "task": "upgrade-dependency",
+ "arguments": {
+  "instance": "ffn-pandas-3"
+ },
+ "steps": [
+  {
+   "tool": "start_upgrade",
+   "arguments": {
+    "instance": "ffn-pandas-3"
+   },
+   "save_as": "start"
+  },
+  {
+   "tool": "edit_file",
+   "arguments": {
+    "edits": [
+     {
+      "path": "dep-upgrade/ffn-pandas-3/ffn/core.py",
+      "old": "    negative_returns = np.minimum(er[1:], 0.0)\n    std = np.std(negative_returns, ddof=1)\n",
+      "new": "    negative_returns = np.minimum(np.asarray(er[1:]), 0.0)\n    std = np.std(negative_returns, ddof=1)\n"
+     },
+     {
+      "path": "dep-upgrade/ffn-pandas-3/ffn/core.py",
+      "old": "    return np.divide(vol, volsum)\n",
+      "new": "    return np.divide(vol, volsum)\n"
+     },
+     {
+      "path": "dep-upgrade/ffn-pandas-3/ffn/core.py",
+      "old": "    vol = np.divide(1.0, np.std(returns, ddof=1)).astype(float)\n",
+      "new": "    vol = np.divide(1.0, np.std(np.asarray(returns), ddof=1)).astype(float)\n"
+     },
+     {
+      "path": "dep-upgrade/ffn-pandas-3/ffn/core.py",
+      "old": "    diff_std = np.std(diff_rets, ddof=1)\n",
+      "new": "    diff_std = np.std(np.asarray(diff_rets), ddof=1)\n"
+     },
+     {
+      "path": "dep-upgrade/ffn-pandas-3/ffn/core.py",
+      "old": "    std = np.std(er, ddof=1)\n",
+      "new": "    std = np.std(np.asarray(er), ddof=1)\n"
+     },
+     {
+      "path": "dep-upgrade/ffn-pandas-3/ffn/core.py",
+      "old": "            self.yearly_vol = np.std(yr, ddof=1)\n",
+      "new": "            self.yearly_vol = np.std(np.asarray(yr), ddof=1)\n"
+     },
+     {
+      "path": "dep-upgrade/ffn-pandas-3/ffn/core.py",
+      "old": "            self.monthly_vol = np.std(mr, ddof=1) * np.sqrt(12)\n",
+      "new": "            self.monthly_vol = np.std(np.asarray(mr), ddof=1) * np.sqrt(12)\n"
+     },
+     {
+      "path": "dep-upgrade/ffn-pandas-3/ffn/core.py",
+      "old": "            self.daily_vol = np.std(r, ddof=1) * np.sqrt(self.annualization_factor)\n",
+      "new": "            self.daily_vol = np.std(np.asarray(r), ddof=1) * np.sqrt(self.annualization_factor)\n"
+     }
+    ],
+    "then": "sync_and_test"
+   },
+   "save_as": "edited"
+  },
+  {
+   "tool": "judge",
+   "arguments": {
+    "instance": "ffn-pandas-3"
+   },
+   "save_as": "judged"
+  },
+  {
+   "tool": "submit",
+   "arguments": {
+    "instance": "ffn-pandas-3",
+    "dependency": "pandas",
+    "from_version": "2.3.3",
+    "to_version": "3.0.1",
+    "requirement": "pandas>=0.19",
+    "changed_files": [
+     "ffn/core.py"
+    ],
+    "migration": [
+     "Kept pandas's requirement (it already admits 3.0.1) and re-locked to 3.0.1",
+     "Migrated ffn/core.py to the pandas 3.0.1 API"
+    ]
+   }
+  }
+ ],
+ "answer": "Upgraded, judged and submitted.",
+ "expect": {
+  "valid": false,
+  "score_max": 0.99,
+  "message_contains": "public test(s) did not pass"
+ }
+}

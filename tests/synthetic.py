@@ -73,7 +73,9 @@ def entry(project: Path) -> dict:
         "hidden": {"commit": "1" * 40, "files": {"tests/test_core.py": hashlib.sha256(FILES["tests/test_core.py"].encode()).hexdigest()}, "targets": ["tests/test_core.py"], "ids": ["tests/test_core.py::test_answer"]},
         "breaking": [{"test": "tests/test_core.py::test_answer", "error": "AttributeError"}],
         "limits": {"max_changed_files": 5, "max_new_files": 2, "max_added_lines": 150},
-        "forbidden": [r"\bwarnings\.(?:filterwarnings|simplefilter|catch_warnings|resetwarnings)\b", r"\bsys\.argv\b"],
+        "shim_exempt": [],
+        "old_api": [],
+        "probe_expected": [],
         "gold": {"files": ["demo/core.py", "setup.py"], "added_lines": 3},
         "fit": "hosted",
         "timings": {},
@@ -133,7 +135,7 @@ def judged(root: Path, item: dict, *, token: str = "token-1", **override) -> dic
     text = lock(NEW)
     (root / ".judge" / "requirements.lock").write_text(text, encoding="utf-8")
     judgement = {
-        "version": 2,
+        "version": 3,
         "complete": True,
         "instance": ID,
         "catalog_sha256": catalog.entry_sha256(item),
@@ -149,13 +151,37 @@ def judged(root: Path, item: dict, *, token: str = "token-1", **override) -> dic
         "build": {"ok": True, "wheel": "demo-1.0-py3-none-any.whl", "requires_dist": ["httpx>=0.25.0", "six"], "seconds": 1.0, "tail": []},
         "public": {"ran": True, "ok": True, "ids_sha256": catalog.ids_sha256(item["public"]["ids"]), "passed": 1, "failed": [], "failed_count": 0, "missing": [], "missing_count": 0},
         "hidden": {"ran": True, "ok": True, "ids_sha256": catalog.ids_sha256(item["hidden"]["ids"]), "passed": 1, "failed": [], "failed_count": 0, "missing": [], "missing_count": 0, "files_digest": catalog.hidden_digest(item["hidden"]["files"])},
-        "forbidden": [],
+        "probe": {"ran": True, "ok": True, "findings": [], "unexpected": [], "imported": ["demo", "demo.core"], "errors": {}, "seconds": 0.5},
+        "shims": [],
+        "ast_shims": [],
         "seconds": 1.0,
         "judged_at": "2026-10-16T00:00:00Z",
     }
     judgement.update(override)
     (root / ".judge" / "judgement.json").write_text(json.dumps(judgement, indent=1, sort_keys=True), encoding="utf-8")
     return judgement
+
+
+def set_locks(item: dict, *, base: str | None = None, gold: str | None = None, **fields) -> dict:
+    """Give the synthetic instance other pre- and post-upgrade locks (and other catalog fields)."""
+    data = catalog.DATA
+    for which, text in (("base", base), ("gold", gold)):
+        if text is not None:
+            (data / item["locks"][which]).write_text(text, encoding="utf-8")
+            item["locks"][f"{which}_sha256"] = hashlib.sha256(text.encode()).hexdigest()
+    item.update(fields)
+    (data / "catalog.json").write_text(json.dumps({"version": 1, "instances": [item]}), encoding="utf-8")
+    catalog.load.cache_clear()
+    return item
+
+
+def judged_lock(root: Path, text: str) -> None:
+    """Make ``text`` the lock the judge recorded."""
+    (root / ".judge" / "requirements.lock").write_text(text, encoding="utf-8")
+    path = root / ".judge" / "judgement.json"
+    judgement = json.loads(path.read_text(encoding="utf-8"))
+    judgement["lock"]["sha256"] = hashlib.sha256(text.encode()).hexdigest()
+    path.write_text(json.dumps(judgement, indent=1, sort_keys=True), encoding="utf-8")
 
 
 def pin(item: dict, *, prior: str = "", files: list[tuple[str, str]] | None = None) -> PinOutput:

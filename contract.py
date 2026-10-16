@@ -257,7 +257,7 @@ class JudgeOutput(Output):
     build_ok: bool
     public_passed: Annotated[int, "Judged public tests that passed"]
     public_failed: Annotated[int, "Judged public tests that did not pass"]
-    violations: Annotated[list[str], "Shims found in the added lines, as file:line: pattern"]
+    violations: Annotated[list[str], "Shims: found in the added code (file:line: rule (detail)), or seen when importing the project"]
     seconds: Annotated[float, SECONDS]
 
 

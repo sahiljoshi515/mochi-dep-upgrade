@@ -4,7 +4,7 @@ each followed by the sync and test runs its `then` asked for."""
 from pathlib import Path
 
 from . import catalog
-from .checks import PREFIX, path_problem, result
+from .checks import PREFIX, forbidden_problem, path_problem, result
 from .trees import matches_any
 
 MAX_EDITS = 10
@@ -26,8 +26,9 @@ def editable_problem(path):
     except ValueError as error:
         return str(error)
     inside = "/".join(parts[2:])
-    if any(part.startswith(".") for part in parts[2:]) or parts[-1] == "conftest.py":
-        return f"that file may not change: {inside}"
+    problem = forbidden_problem(inside, entry["spec"]["file"])
+    if problem:
+        return problem
     if not matches_any(inside, [entry["spec"]["file"], *entry["source_globs"]]):
         return f"{inside} may not change"
     return None

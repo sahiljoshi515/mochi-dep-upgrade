@@ -55,20 +55,6 @@
    "dependency": "click",
    "env": {},
    "fit": "hosted",
-   "forbidden": [
-    "\\bwarnings\\.(?:filterwarnings|simplefilter|catch_warnings|resetwarnings)\\b",
-    "\\bsys\\.modules\\b",
-    "\\bimportlib\\.reload\\b",
-    "\\b__import__\\(",
-    "PYTEST_CURRENT_TEST",
-    "[\"']pytest[\"']\\s+in\\s+sys\\.modules",
-    "\\bsys\\.argv\\b",
-    "\\bpkg_resources\\b",
-    "\\bsetattr\\(\\s*(?:click)\\b",
-    "^\\s*(?:click)\\.[A-Za-z_][A-Za-z0-9_.]*\\s*=(?!=)",
-    "\\b(?:click)\\.__version__\\b",
-    "\\bversion\\(\\s*[\"']click[\"']\\s*\\)"
-   ],
    "from_version": "8.1.8",
    "gold": {
     "added_lines": 25,
@@ -126,10 +112,12 @@
     "gold_sha256": "9b6a5d28b1025a99a49c13d4e56d7200c17ff59c3ee2b47ab98dc0bb4bd7c0a2"
    },
    "notes": "Test requirements from the testing extra; pyproject's addopts turn coverage on, so it is turned off (--no-cov).",
+   "old_api": [],
    "path_entries": [
     "."
    ],
    "post_setup": {},
+   "probe_expected": [],
    "public": {
     "excluded": [
      {
@@ -237,6 +225,7 @@
    "python": "3.12",
    "repo": "click-contrib/click-repl",
    "resolution_date": "2026-03-27T14:31:02Z",
+   "shim_exempt": [],
    "source_globs": [
     "click_repl/**/*.py"
    ],
@@ -267,14 +256,14 @@
    ],
    "timings": {
     "by_tool": {
-     "edit_file": 1.9,
-     "judge": 3.0,
-     "start_upgrade": 1.9
+     "edit_file": 2.3,
+     "judge": 4.3,
+     "start_upgrade": 2.3
     },
-    "load_average": 6.7,
+    "load_average": 6.4,
     "measured": "gold case, sandboxed, cold cache",
     "single_calls": true,
-    "tool_seconds": 6.8,
+    "tool_seconds": 8.9,
     "turns": 4
    },
    "title": "click-repl: compatibility with click 8.2+",
@@ -351,21 +340,7 @@
    },
    "dependency": "numpy",
    "env": {},
-   "fit": "hosted",
-   "forbidden": [
-    "\\bwarnings\\.(?:filterwarnings|simplefilter|catch_warnings|resetwarnings)\\b",
-    "\\bsys\\.modules\\b",
-    "\\bimportlib\\.reload\\b",
-    "\\b__import__\\(",
-    "PYTEST_CURRENT_TEST",
-    "[\"']pytest[\"']\\s+in\\s+sys\\.modules",
-    "\\bsys\\.argv\\b",
-    "\\bpkg_resources\\b",
-    "\\bsetattr\\(\\s*(?:numpy)\\b",
-    "^\\s*(?:numpy)\\.[A-Za-z_][A-Za-z0-9_.]*\\s*=(?!=)",
-    "\\b(?:numpy)\\.__version__\\b",
-    "\\bversion\\(\\s*[\"']numpy[\"']\\s*\\)"
-   ],
+   "fit": "local",
    "from_version": "1.26.4",
    "gold": {
     "added_lines": 33,
@@ -410,12 +385,14 @@
     "gold_sha256": "de0a86f7a3896b2bee595baddb86daa98fbb0746f0900b47f571992aa03de227"
    },
    "notes": "Upstream's NumPy 2 work spans four commits (b68933df3..9c5f59b6c: the update for NumPy 2 and a compatibility fix); the requirement already admits 2, so the pre-upgrade lock is held below 2. The tests live inside the package (src/emcee/tests), which is not editable. The version comes from setuptools-scm, given without git history. The spec is setup.py's INSTALL_REQUIRES. Resolved as of 2024-07-01: upstream's commits came before NumPy 2.0's release (2024-06-16). src/emcee/emcee_version.py, which setuptools-scm writes at install, is written at checkout.",
+   "old_api": [],
    "path_entries": [
     "src"
    ],
    "post_setup": {
     "src/emcee/emcee_version.py": "__version__ = \"3.1.6\"\n"
    },
+   "probe_expected": [],
    "public": {
     "excluded": [
      {
@@ -547,6 +524,7 @@
    "python": "3.12",
    "repo": "dfm/emcee",
    "resolution_date": "2024-07-01T00:00:00Z",
+   "shim_exempt": [],
    "source_globs": [
     "src/emcee/*.py",
     "src/emcee/moves/*.py",
@@ -750,14 +728,14 @@
    ],
    "timings": {
     "by_tool": {
-     "edit_file": 26.6,
-     "judge": 25.8,
-     "start_upgrade": 2.5
+     "edit_file": 34.0,
+     "judge": 34.4,
+     "start_upgrade": 3.4
     },
-    "load_average": 6.7,
+    "load_average": 6.4,
     "measured": "gold case, sandboxed, cold cache",
     "single_calls": true,
-    "tool_seconds": 55.0,
+    "tool_seconds": 71.9,
     "turns": 4
    },
    "title": "emcee: updates for NumPy 2",
@@ -804,21 +782,7 @@
    "build_env": {},
    "dependency": "pandas",
    "env": {},
-   "fit": "hosted",
-   "forbidden": [
-    "\\bwarnings\\.(?:filterwarnings|simplefilter|catch_warnings|resetwarnings)\\b",
-    "\\bsys\\.modules\\b",
-    "\\bimportlib\\.reload\\b",
-    "\\b__import__\\(",
-    "PYTEST_CURRENT_TEST",
-    "[\"']pytest[\"']\\s+in\\s+sys\\.modules",
-    "\\bsys\\.argv\\b",
-    "\\bpkg_resources\\b",
-    "\\bsetattr\\(\\s*(?:pandas)\\b",
-    "^\\s*(?:pandas)\\.[A-Za-z_][A-Za-z0-9_.]*\\s*=(?!=)",
-    "\\b(?:pandas)\\.__version__\\b",
-    "\\bversion\\(\\s*[\"']pandas[\"']\\s*\\)"
-   ],
+   "fit": "local",
    "from_version": "2.3.3",
    "gold": {
     "added_lines": 9,
@@ -899,10 +863,52 @@
     "gold_sha256": "12a6e0e927a07585f80e5ca7b98d44045c11bae194d5a372cbcbdf52ef9a3b8a"
    },
    "notes": "The requirement (pandas>=0.19) already admits 3; the pre-upgrade lock is held below 3.",
+   "old_api": [],
    "path_entries": [
     "."
    ],
    "post_setup": {},
+   "probe_expected": [
+    "puts the project's function ffn.core.asfreq_actual [project] into pandas.core.base.PandasObject.asfreq_actual",
+    "puts the project's function ffn.core.calc_cagr [project] into pandas.core.base.PandasObject.calc_cagr",
+    "puts the project's function ffn.core.calc_calmar_ratio [project] into pandas.core.base.PandasObject.calc_calmar",
+    "puts the project's function ffn.core.calc_calmar_ratio [project] into pandas.core.base.PandasObject.calc_calmar_ratio",
+    "puts the project's function ffn.core.calc_clusters [project] into pandas.core.base.PandasObject.calc_clusters",
+    "puts the project's function ffn.core.calc_erc_weights [project] into pandas.core.base.PandasObject.calc_erc_weights",
+    "puts the project's function ffn.core.calc_ftca [project] into pandas.core.base.PandasObject.calc_ftca",
+    "puts the project's function ffn.core.calc_information_ratio [project] into pandas.core.base.PandasObject.calc_information",
+    "puts the project's function ffn.core.calc_information_ratio [project] into pandas.core.base.PandasObject.calc_information_ratio",
+    "puts the project's function ffn.core.calc_inv_vol_weights [project] into pandas.core.base.PandasObject.calc_inv_vol_weights",
+    "puts the project's function ffn.core.calc_max_drawdown [project] into pandas.core.base.PandasObject.calc_max_drawdown",
+    "puts the project's function ffn.core.calc_mean_var_weights [project] into pandas.core.base.PandasObject.calc_mean_var_weights",
+    "puts the project's function ffn.core.calc_perf_stats [project] into pandas.core.base.PandasObject.calc_perf_stats",
+    "puts the project's function ffn.core.calc_prob_mom [project] into pandas.core.base.PandasObject.calc_prob_mom",
+    "puts the project's function ffn.core.calc_risk_return_ratio [project] into pandas.core.base.PandasObject.calc_risk_return",
+    "puts the project's function ffn.core.calc_risk_return_ratio [project] into pandas.core.base.PandasObject.calc_risk_return_ratio",
+    "puts the project's function ffn.core.calc_sharpe [project] into pandas.core.base.PandasObject.calc_sharpe",
+    "puts the project's function ffn.core.calc_sharpe [project] into pandas.core.base.PandasObject.calc_sharpe_ratio",
+    "puts the project's function ffn.core.calc_sortino_ratio [project] into pandas.core.base.PandasObject.calc_sortino",
+    "puts the project's function ffn.core.calc_sortino_ratio [project] into pandas.core.base.PandasObject.calc_sortino_ratio",
+    "puts the project's function ffn.core.calc_stats [project] into pandas.core.base.PandasObject.calc_stats",
+    "puts the project's function ffn.core.calc_total_return [project] into pandas.core.base.PandasObject.calc_total_return",
+    "puts the project's function ffn.core.drop_duplicate_cols [project] into pandas.core.base.PandasObject.drop_duplicate_cols",
+    "puts the project's function ffn.core.plot_corr_heatmap [project] into pandas.core.base.PandasObject.plot_corr_heatmap",
+    "puts the project's function ffn.core.plot_heatmap [project] into pandas.core.base.PandasObject.plot_heatmap",
+    "puts the project's function ffn.core.rebase [project] into pandas.core.base.PandasObject.rebase",
+    "puts the project's function ffn.core.rescale [project] into pandas.core.base.PandasObject.rescale",
+    "puts the project's function ffn.core.rollapply [project] into pandas.core.base.PandasObject.rollapply",
+    "puts the project's function ffn.core.to_drawdown_series [project] into pandas.core.base.PandasObject.to_drawdown_series",
+    "puts the project's function ffn.core.to_excess_returns [project] into pandas.core.base.PandasObject.to_excess_returns",
+    "puts the project's function ffn.core.to_log_returns [project] into pandas.core.base.PandasObject.to_log_returns",
+    "puts the project's function ffn.core.to_monthly [project] into pandas.core.base.PandasObject.to_monthly",
+    "puts the project's function ffn.core.to_price_index [project] into pandas.core.base.PandasObject.to_price_index",
+    "puts the project's function ffn.core.to_returns [project] into pandas.core.base.PandasObject.to_returns",
+    "puts the project's function ffn.core.to_ulcer_index [project] into pandas.core.base.PandasObject.to_ulcer_index",
+    "puts the project's function ffn.core.to_ulcer_performance_index [project] into pandas.core.base.PandasObject.to_ulcer_performance_index",
+    "puts the project's function ffn.core.winsorize [project] into pandas.core.base.PandasObject.winsorize",
+    "puts the project's function ffn.utils.as_format [project] into pandas.core.base.PandasObject.as_format",
+    "puts the project's function ffn.utils.as_percent [project] into pandas.core.base.PandasObject.as_percent"
+   ],
    "public": {
     "excluded": [
      {
@@ -967,6 +973,7 @@
    "python": "3.12",
    "repo": "pmorissette/ffn",
    "resolution_date": "2026-02-23T05:05:12Z",
+   "shim_exempt": [],
    "source_globs": [
     "ffn/**/*.py"
    ],
@@ -1180,14 +1187,14 @@
    ],
    "timings": {
     "by_tool": {
-     "edit_file": 32.4,
-     "judge": 12.4,
-     "start_upgrade": 6.0
+     "edit_file": 38.2,
+     "judge": 17.9,
+     "start_upgrade": 8.2
     },
-    "load_average": 6.7,
+    "load_average": 6.4,
     "measured": "gold case, sandboxed, cold cache",
     "single_calls": true,
-    "tool_seconds": 50.8,
+    "tool_seconds": 64.5,
     "turns": 4
    },
    "title": "ffn: fixes for pandas 3",
@@ -1263,20 +1270,6 @@
    "dependency": "marshmallow",
    "env": {},
    "fit": "hosted",
-   "forbidden": [
-    "\\bwarnings\\.(?:filterwarnings|simplefilter|catch_warnings|resetwarnings)\\b",
-    "\\bsys\\.modules\\b",
-    "\\bimportlib\\.reload\\b",
-    "\\b__import__\\(",
-    "PYTEST_CURRENT_TEST",
-    "[\"']pytest[\"']\\s+in\\s+sys\\.modules",
-    "\\bsys\\.argv\\b",
-    "\\bpkg_resources\\b",
-    "\\bsetattr\\(\\s*(?:marshmallow)\\b",
-    "^\\s*(?:marshmallow)\\.[A-Za-z_][A-Za-z0-9_.]*\\s*=(?!=)",
-    "\\b(?:marshmallow)\\.__version__\\b",
-    "\\bversion\\(\\s*[\"']marshmallow[\"']\\s*\\)"
-   ],
    "from_version": "3.26.1",
    "gold": {
     "added_lines": 34,
@@ -1326,10 +1319,12 @@
     "gold_sha256": "0a822cc8938b67bcb356dc285be3d8f767dd258748fdd89c020fa7c3c5d768a8"
    },
    "notes": "Upstream made the code work with marshmallow 4 before 4.0 shipped (2025-04-16) and kept the requirement (marshmallow>=3.0.0); resolved as of 2025-04-20 with the pre-upgrade lock held below 4. Test requirements from the tests and sqlalchemy extras.",
+   "old_api": [],
    "path_entries": [
     "src"
    ],
    "post_setup": {},
+   "probe_expected": [],
    "public": {
     "excluded": [
      {
@@ -1404,6 +1399,7 @@
    "python": "3.12",
    "repo": "marshmallow-code/flask-marshmallow",
    "resolution_date": "2025-04-20T00:00:00Z",
+   "shim_exempt": [],
    "source_globs": [
     "src/flask_marshmallow/**/*.py"
    ],
@@ -1435,14 +1431,14 @@
    ],
    "timings": {
     "by_tool": {
-     "edit_file": 4.0,
-     "judge": 3.5,
-     "start_upgrade": 2.5
+     "edit_file": 5.4,
+     "judge": 4.9,
+     "start_upgrade": 4.0
     },
-    "load_average": 6.7,
+    "load_average": 6.4,
     "measured": "gold case, sandboxed, cold cache",
     "single_calls": true,
-    "tool_seconds": 10.0,
+    "tool_seconds": 14.4,
     "turns": 5
    },
    "title": "flask-marshmallow: support marshmallow 4",
@@ -1525,19 +1521,6 @@
    "dependency": "Werkzeug",
    "env": {},
    "fit": "hosted",
-   "forbidden": [
-    "\\bsys\\.modules\\b",
-    "\\bimportlib\\.reload\\b",
-    "\\b__import__\\(",
-    "PYTEST_CURRENT_TEST",
-    "[\"']pytest[\"']\\s+in\\s+sys\\.modules",
-    "\\bsys\\.argv\\b",
-    "\\bpkg_resources\\b",
-    "\\bsetattr\\(\\s*(?:werkzeug)\\b",
-    "^\\s*(?:werkzeug)\\.[A-Za-z_][A-Za-z0-9_.]*\\s*=(?!=)",
-    "\\b(?:werkzeug)\\.__version__\\b",
-    "\\bversion\\(\\s*[\"']Werkzeug[\"']\\s*\\)"
-   ],
    "from_version": "2.3.8",
    "gold": {
     "added_lines": 88,
@@ -1626,10 +1609,12 @@
     "gold_sha256": "e94e959fbeafaca0e997cf2eb156a9ec97dc1d4c1cfc26c2adb931016082f0b9"
    },
    "notes": "Upstream's Flask 3 / Werkzeug 3 support spans six commits up to the 1.3.0 release (3ea4ce196..0c441149e); setup.py reads the requirements from requirements/install.pip, the spec. Test requirements from requirements/test.pip. Licence: BSD-3-Clause (GitHub does not classify it).",
+   "old_api": [],
    "path_entries": [
     "."
    ],
    "post_setup": {},
+   "probe_expected": [],
    "public": {
     "excluded": [
      {
@@ -2902,6 +2887,10 @@
    "python": "3.11",
    "repo": "python-restx/flask-restx",
    "resolution_date": "2023-12-11T14:42:36Z",
+   "shim_exempt": [
+    "version-sniff",
+    "warnings"
+   ],
    "source_globs": [
     "flask_restx/**/*.py"
    ],
@@ -2937,14 +2926,14 @@
    ],
    "timings": {
     "by_tool": {
-     "edit_file": 5.6,
+     "edit_file": 5.3,
      "judge": 6.4,
-     "start_upgrade": 4.8
+     "start_upgrade": 7.0
     },
-    "load_average": 6.7,
+    "load_average": 6.4,
     "measured": "gold case, sandboxed, cold cache",
     "single_calls": true,
-    "tool_seconds": 16.7,
+    "tool_seconds": 18.7,
     "turns": 5
    },
    "title": "Flask-RESTX: support Flask 3 and Werkzeug 3",
@@ -3022,20 +3011,6 @@
    "dependency": "SQLAlchemy",
    "env": {},
    "fit": "hosted",
-   "forbidden": [
-    "\\bwarnings\\.(?:filterwarnings|simplefilter|catch_warnings|resetwarnings)\\b",
-    "\\bsys\\.modules\\b",
-    "\\bimportlib\\.reload\\b",
-    "\\b__import__\\(",
-    "PYTEST_CURRENT_TEST",
-    "[\"']pytest[\"']\\s+in\\s+sys\\.modules",
-    "\\bsys\\.argv\\b",
-    "\\bpkg_resources\\b",
-    "\\bsetattr\\(\\s*(?:sqlalchemy)\\b",
-    "^\\s*(?:sqlalchemy)\\.[A-Za-z_][A-Za-z0-9_.]*\\s*=(?!=)",
-    "\\b(?:sqlalchemy)\\.__version__\\b",
-    "\\bversion\\(\\s*[\"']SQLAlchemy[\"']\\s*\\)"
-   ],
    "from_version": "1.4.46",
    "gold": {
     "added_lines": 4,
@@ -3129,10 +3104,12 @@
     "gold_sha256": "699250e3e876c50c95cd3acbff1cdf446e31dc1d588ebbfd0cc7e9304f76ea0a"
    },
    "notes": "Upstream adapted the code during SQLAlchemy 2.0's beta and left the requirement (SQLAlchemy>=1.4.18) as it was; resolved as of 2023-01-30, after 2.0 final, with the pre-upgrade lock held below 2. Python 3.11: SQLAlchemy 1.4.46 has no 3.12 wheels. C is the merge of PR #1123; the base is its first parent.",
+   "old_api": [],
    "path_entries": [
     "src"
    ],
    "post_setup": {},
+   "probe_expected": [],
    "public": {
     "excluded": [
      {
@@ -3273,6 +3250,7 @@
    "python": "3.11",
    "repo": "pallets-eco/flask-sqlalchemy",
    "resolution_date": "2023-01-30T00:00:00Z",
+   "shim_exempt": [],
    "source_globs": [
     "src/flask_sqlalchemy/**/*.py"
    ],
@@ -3458,14 +3436,14 @@
    ],
    "timings": {
     "by_tool": {
-     "edit_file": 4.8,
-     "judge": 4.2,
-     "start_upgrade": 4.5
+     "edit_file": 3.6,
+     "judge": 5.9,
+     "start_upgrade": 3.9
     },
-    "load_average": 6.7,
+    "load_average": 6.4,
     "measured": "gold case, sandboxed, cold cache",
     "single_calls": true,
-    "tool_seconds": 13.5,
+    "tool_seconds": 13.4,
     "turns": 4
    },
    "title": "Flask-SQLAlchemy: compatibility with SQLAlchemy 2",
@@ -3544,21 +3522,6 @@
    "dependency": "pydantic",
    "env": {},
    "fit": "hosted",
-   "forbidden": [
-    "\\bwarnings\\.(?:filterwarnings|simplefilter|catch_warnings|resetwarnings)\\b",
-    "\\bsys\\.modules\\b",
-    "\\bimportlib\\.reload\\b",
-    "\\b__import__\\(",
-    "PYTEST_CURRENT_TEST",
-    "[\"']pytest[\"']\\s+in\\s+sys\\.modules",
-    "\\bsys\\.argv\\b",
-    "\\bpkg_resources\\b",
-    "\\bsetattr\\(\\s*(?:pydantic)\\b",
-    "^\\s*(?:pydantic)\\.[A-Za-z_][A-Za-z0-9_.]*\\s*=(?!=)",
-    "\\b(?:pydantic)\\.__version__\\b",
-    "\\bversion\\(\\s*[\"']pydantic[\"']\\s*\\)",
-    "\\bpydantic\\.v1\\b"
-   ],
    "from_version": "1.10.11",
    "gold": {
     "added_lines": 27,
@@ -3712,10 +3675,14 @@
     "gold_sha256": "d3f3116267565b67e8e05bd5012e07689b5aeee7b385c3fa86159f99ba05050e"
    },
    "notes": "Upstream's spec moves pydantic~=1.0 to ~=2.0, so the requirement must exclude 1.x. Test requirements from the test extra. Python 3.11: pydantic 1.10.11 (July 2023) has no 3.12 wheels.",
+   "old_api": [
+    "pydantic.v1"
+   ],
    "path_entries": [
     "."
    ],
    "post_setup": {},
+   "probe_expected": [],
    "public": {
     "excluded": [
      {
@@ -3865,6 +3832,7 @@
    "python": "3.11",
    "repo": "developmentseed/geojson-pydantic",
    "resolution_date": "2023-07-06T10:43:45Z",
+   "shim_exempt": [],
    "source_globs": [
     "geojson_pydantic/**/*.py"
    ],
@@ -3896,14 +3864,14 @@
    ],
    "timings": {
     "by_tool": {
-     "edit_file": 7.3,
-     "judge": 5.0,
-     "start_upgrade": 8.3
+     "edit_file": 8.0,
+     "judge": 4.6,
+     "start_upgrade": 4.6
     },
-    "load_average": 6.7,
+    "load_average": 6.4,
     "measured": "gold case, sandboxed, cold cache",
     "single_calls": true,
-    "tool_seconds": 20.6,
+    "tool_seconds": 17.2,
     "turns": 6
    },
    "title": "geojson-pydantic: migrate to pydantic 2",
@@ -3982,21 +3950,6 @@
    "dependency": "pydantic",
    "env": {},
    "fit": "hosted",
-   "forbidden": [
-    "\\bwarnings\\.(?:filterwarnings|simplefilter|catch_warnings|resetwarnings)\\b",
-    "\\bsys\\.modules\\b",
-    "\\bimportlib\\.reload\\b",
-    "\\b__import__\\(",
-    "PYTEST_CURRENT_TEST",
-    "[\"']pytest[\"']\\s+in\\s+sys\\.modules",
-    "\\bsys\\.argv\\b",
-    "\\bpkg_resources\\b",
-    "\\bsetattr\\(\\s*(?:pydantic)\\b",
-    "^\\s*(?:pydantic)\\.[A-Za-z_][A-Za-z0-9_.]*\\s*=(?!=)",
-    "\\b(?:pydantic)\\.__version__\\b",
-    "\\bversion\\(\\s*[\"']pydantic[\"']\\s*\\)",
-    "\\bpydantic\\.v1\\b"
-   ],
    "from_version": "1.10.11",
    "gold": {
     "added_lines": 346,
@@ -4052,10 +4005,14 @@
     "gold_sha256": "57fdb08e7fa426ca63b2a78cfa5c06357aeb03538d0a81b4ee774cbc29c700b0"
    },
    "notes": "The requirement (pydantic>=1.8) already admits 2.0; the pre-upgrade lock is held below 2. Upstream supports both majors by checking pydantic.version.VERSION. Python 3.11: pydantic 1.10.11 (July 2023) has no 3.12 wheels. Deprecation warnings are errors: upstream's change moved the code off pydantic's deprecated v1 API (parse_obj_as, .json()), which pydantic 2 still accepts with a warning.",
+   "old_api": [
+    "pydantic.v1"
+   ],
    "path_entries": [
     "src"
    ],
    "post_setup": {},
+   "probe_expected": [],
    "public": {
     "excluded": [
      {
@@ -4106,6 +4063,9 @@
    "python": "3.11",
    "repo": "NowanIlfideme/pydantic-yaml",
    "resolution_date": "2023-07-16T16:03:51Z",
+   "shim_exempt": [
+    "version-sniff"
+   ],
    "source_globs": [
     "src/pydantic_yaml/**/*.py"
    ],
@@ -4135,15 +4095,15 @@
    ],
    "timings": {
     "by_tool": {
-     "edit_file": 3.5,
-     "judge": 3.4,
+     "edit_file": 3.2,
+     "judge": 4.2,
      "start_upgrade": 3.7,
      "write_file": 1.1
     },
-    "load_average": 6.7,
+    "load_average": 6.4,
     "measured": "gold case, sandboxed, cold cache",
     "single_calls": true,
-    "tool_seconds": 11.7,
+    "tool_seconds": 12.2,
     "turns": 5
    },
    "title": "pydantic-yaml: support pydantic 2",
@@ -4219,20 +4179,6 @@
    "dependency": "httpx",
    "env": {},
    "fit": "hosted",
-   "forbidden": [
-    "\\bwarnings\\.(?:filterwarnings|simplefilter|catch_warnings|resetwarnings)\\b",
-    "\\bsys\\.modules\\b",
-    "\\bimportlib\\.reload\\b",
-    "\\b__import__\\(",
-    "PYTEST_CURRENT_TEST",
-    "[\"']pytest[\"']\\s+in\\s+sys\\.modules",
-    "\\bsys\\.argv\\b",
-    "\\bpkg_resources\\b",
-    "\\bsetattr\\(\\s*(?:httpx)\\b",
-    "^\\s*(?:httpx)\\.[A-Za-z_][A-Za-z0-9_.]*\\s*=(?!=)",
-    "\\b(?:httpx)\\.__version__\\b",
-    "\\bversion\\(\\s*[\"']httpx[\"']\\s*\\)"
-   ],
    "from_version": "0.27.2",
    "gold": {
     "added_lines": 7,
@@ -4395,10 +4341,12 @@
     "gold_sha256": "92301c32041e3ad7c3b5cc25b6c2ce74081d9498fc7417f140d43235a1452e79"
    },
    "notes": "Test requirements from the repository's noxfile; coverage is off (--no-cov) because a subset run cannot meet its 100% gate.",
+   "old_api": [],
    "path_entries": [
     "."
    ],
    "post_setup": {},
+   "probe_expected": [],
    "public": {
     "excluded": [
      {
@@ -4756,6 +4704,7 @@
    "python": "3.12",
    "repo": "lundberg/respx",
    "resolution_date": "2024-12-20T22:16:47Z",
+   "shim_exempt": [],
    "source_globs": [
     "respx/**/*.py"
    ],
@@ -4790,14 +4739,14 @@
    ],
    "timings": {
     "by_tool": {
-     "edit_file": 3.7,
-     "judge": 5.5,
-     "start_upgrade": 2.3
+     "edit_file": 3.6,
+     "judge": 7.5,
+     "start_upgrade": 2.5
     },
-    "load_average": 6.7,
+    "load_average": 6.4,
     "measured": "gold case, sandboxed, cold cache",
     "single_calls": true,
-    "tool_seconds": 11.5,
+    "tool_seconds": 13.6,
     "turns": 4
    },
    "title": "respx: support httpx 0.28",

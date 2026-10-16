@@ -15,7 +15,7 @@ import json
 from . import catalog
 from .checks import Constraints, project_root, short
 from .locks import read_lock, versions_of
-from .shims import added_lines_by_file, pristine_manifest, scan
+from .shims import added_lines_by_file, pristine_manifest, recorded_problems, scan
 from .specs import read_spec
 from .trees import changes, matches_any, sha256_of, text_lines, tree_entries, tree_hash, unified
 from .versions import admits, canonical_name, parse_requirement, requirement_key
@@ -91,15 +91,31 @@ def spec_scope_problems(entry, requirements, base_requirements):
     return problems
 
 
-def lock_differences(current, gold, dependency):
-    """``name before -> after`` for every package other than the dependency whose pinned versions
-    differ between the judged lock and the validated post-upgrade lock."""
-    now, want = versions_of(current), versions_of(gold)
-    out = []
-    for name in sorted((set(now) | set(want)) - {dependency}):
-        if now.get(name) != want.get(name):
-            out.append(f"{name} {','.join(want.get(name, [])) or 'absent'} -> {','.join(now.get(name, [])) or 'absent'}")
-    return out
+def lock_scope_problems(current, base, gold, entry):
+    """Every package other than the dependency that the judged lock holds where neither the pre-upgrade
+    lock nor upstream's validated upgrade has it. Each package may keep its pre-upgrade version (or stay
+    out); one the upgrade moves (allowed collateral), brings in (allowed new) or drops may instead be
+    where upstream's lock has it. Messages say what the judged lock holds against what was allowed."""
+    dependency = canonical_name(entry["dependency"])
+    collateral = {canonical_name(name) for name in entry.get("allowed_collateral", [])}
+    now, before, after = versions_of(current), versions_of(base), versions_of(gold)
+    problems = []
+    for name in sorted((set(now) | set(before) | set(after)) - {dependency}):
+        have, was, upstream = now.get(name), before.get(name), after.get(name)
+        if have in (was, upstream):
+            continue
+        shown = ",".join(have or [])
+        if have is None:
+            problems.append(f"{name} is missing from the lock; the upgrade keeps it at {','.join(was or upstream)}")
+        elif was is None and upstream is None:
+            problems.append(f"{name} {shown} came into the lock; the upgrade brings in no {name}")
+        elif was is None:
+            problems.append(f"{name} came into the lock at {shown}; the upgrade may bring it in at {','.join(upstream)} only")
+        elif name in collateral and upstream is not None:
+            problems.append(f"{name} is locked at {shown}; it may stay at {','.join(was)} or move to {','.join(upstream)}, as upstream's upgrade did")
+        else:
+            problems.append(f"{name} moved from {','.join(was)} to {shown}; the upgrade keeps it at {','.join(was)}")
+    return problems
 
 
 def diff_lines(root, changed):
@@ -185,7 +201,7 @@ def verify_task(arguments, output, reference, workspace):
         judged = c.add(
             "judged",
             "The judge recorded a complete judgement",
-            judgement.get("version") == 2 and judgement.get("instance") == instance,
+            judgement.get("version") == 3 and judgement.get("instance") == instance,
             message="The judgement is for another instance or format",
         )
 
@@ -268,6 +284,8 @@ def verify_task(arguments, output, reference, workspace):
     if pristine_ok:
         try:
             spec_requirements, blanked_now = read_spec(spec["kind"], (root / spec["file"]).read_bytes().decode("utf-8"))
+            for text in spec_requirements:
+                parse_requirement(text)
             found = dependency_requirements(entry, spec_requirements)
             requirement_now = found[0] if len(found) == 1 else ""
         except (ValueError, UnicodeDecodeError, OSError) as error:
@@ -278,20 +296,25 @@ def verify_task(arguments, output, reference, workspace):
         submitted = sorted({path.strip() for path in output.changed_files})
         extra = [path for path in submitted if path not in derived]
         missing = [path for path in derived if path not in submitted]
+        submitted_problem = ""
         try:
             same_requirement = bool(requirement_now) and requirement_key(output.requirement) == requirement_key(requirement_now)
-        except ValueError:
-            same_requirement = False
-        if extra:
+        except ValueError as error:
+            same_requirement, submitted_problem = False, f"The submission's requirement {output.requirement!r} is not valid: {error}"
+        if spec_problem:
+            message = spec_problem
+        elif extra:
             message = "The submission lists files that did not change: " + ", ".join(short(extra, 5))
         elif missing:
             message = "The submission leaves out changed files: " + ", ".join(short(missing, 5))
+        elif submitted_problem:
+            message = submitted_problem
         else:
             message = f"The submission states the requirement {output.requirement!r}; the spec says {requirement_now!r}"
         c.add(
             "submission_matches",
             "The submission lists exactly the changed files and the spec's requirement",
-            not extra and not missing and same_requirement,
+            not spec_problem and not extra and not missing and same_requirement,
             expected={"changed_files": derived, "requirement": requirement_now},
             actual={"changed_files": submitted, "requirement": output.requirement},
             message=message,
@@ -362,6 +385,8 @@ def verify_task(arguments, output, reference, workspace):
     constraint = f"{dependency}'s requirement admits {target}" + (f" and excludes {old}" if exclude else "")
     if not pristine_ok:
         c.skip("spec_admits_target", constraint, no_project)
+    elif spec_problem:
+        c.add("spec_admits_target", constraint, False, message=spec_problem)
     elif not requirement_now:
         c.add("spec_admits_target", constraint, False, message=f"The spec does not state {dependency}'s requirement exactly once")
     else:
@@ -409,17 +434,12 @@ def verify_task(arguments, output, reference, workspace):
         c.add("lock_target", f"The lock pins {dependency} {target} with PyPI's hashes", not problem, expected=target, actual=(sorted({pin["version"] for pin in (lock_packages or {}).get(dep, [])}) if lock_packages else None), message=problem)
 
     # 14. Nothing else in the lock moved beyond the validated upgrade.
+    scope_label = "Every other locked package keeps its version, or takes upstream's where the upgrade moves it"
     if lock_packages is None:
-        c.skip("lock_scope", "Every other locked package is where the validated upgrade puts it", "no readable judged lock")
+        c.skip("lock_scope", scope_label, "no readable judged lock")
     else:
-        moved = lock_differences(lock_packages, read_lock(catalog.lock_text(entry, "gold")), dep)
-        c.add(
-            "lock_scope",
-            "Every other locked package is where the validated upgrade puts it",
-            not moved,
-            actual=short(moved, 10),
-            message=(f"{moved[0]}: the upgrade does not need that" if moved else ""),
-        )
+        moved = lock_scope_problems(lock_packages, read_lock(catalog.lock_text(entry, "base")), read_lock(catalog.lock_text(entry, "gold")), entry)
+        c.add("lock_scope", scope_label, not moved, actual=short(moved, 10), message=(moved[0] if moved else ""))
 
     # 15. Installed for judging.
     if not judged:
@@ -483,12 +503,29 @@ def verify_task(arguments, output, reference, workspace):
             message = f"The {kind} test run did not finish cleanly"
         c.add(cid, label, ok, expected=len(ids), actual=record.get("passed"), message=message)
 
-    # 19. No shims in what was added.
+    # 19. No shims: none in the code the change adds (read here from its tokens, and by the judge with
+    # ast), none in what importing the project does (the judge's import probe).
+    shim_label = "No shim in the added code or in what importing the project does (warning filters, patching, import tricks, sniffing)"
     if not pristine_ok:
-        c.skip("no_shims", "No shim in the added lines (warning filters, monkeypatching, sniffing)", no_project)
+        c.skip("no_shims", shim_label, no_project)
     else:
-        found = scan(root, editable_changed, entry["forbidden"])
-        c.add("no_shims", "No shim in the added lines (warning filters, monkeypatching, sniffing)", not found, actual=short(found, 10), message=(f"Shim at {found[0]}" if found else ""))
+        found = scan(root, editable_changed, entry)
+        if judged:
+            records = judgement.get("ast_shims")
+            found += [item for item in recorded_problems(records if isinstance(records, list) else [], entry) if item not in found]
+        problems = [f"Shim at {item}" for item in sorted(found, key=lambda text: (text.split(":")[0], int(text.split(":")[1]) if text.split(":")[1].isdigit() else 0))]
+        if judged:
+            if not isinstance(judgement.get("ast_shims"), list):
+                problems.append("The judge did not read the added code")
+            record = judgement.get("probe")
+            if not isinstance(record, dict):
+                problems.append("The judge did not run the import probe")
+            elif record.get("ran"):
+                expected = set(entry.get("probe_expected", []))
+                problems += [f"Importing the project {finding}" for finding in record.get("findings") or [] if finding not in expected]
+            elif (judgement.get("lock") or {}).get("ok"):
+                problems.append("The import probe did not run")
+        c.add("no_shims", shim_label, not problems, actual=short(problems, 10), message=(problems[0] if problems else ""))
 
     hidden = (judgement or {}).get("hidden") or {}
     public = (judgement or {}).get("public") or {}

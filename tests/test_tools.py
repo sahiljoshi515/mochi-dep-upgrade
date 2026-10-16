@@ -69,6 +69,20 @@ def test_edit_refusals(started: Path, path: str, old: str, new: str, message: st
         edit_file(EditInput(edits=[edit(path, old, new)], then=Then.NOTHING), started)
 
 
+@pytest.mark.parametrize("name", ["sitecustomize.py", "usercustomize.py", "conftest.py"])
+def test_files_the_interpreter_or_pytest_would_load_may_not_be_written(started: Path, name: str):
+    # The tool and the input verifier share one predicate (review F3).
+    with pytest.raises(ToolError, match="may not change"):
+        write_file(WriteInput(files=[FileWrite(path=f"{ROOT}/demo/{name}", content="x = 1\n")], then=Then.NOTHING), started)
+
+
+@pytest.mark.parametrize(("requirement", "message"), [('"httpx~=0"', "~= needs at least two release segments"), ('"httpx>=0.28+local"', "cannot take a local version")])
+def test_an_invalid_specifier_is_refused_where_it_is_written(started: Path, requirement: str, message: str):
+    # Review F4: refused by edit_file with the reason, not left to fail later as a lock that does not resolve.
+    with pytest.raises(ToolError, match=message):
+        edit_file(EditInput(edits=[edit("setup.py", '"httpx>=0.25.0,<0.28.0"', requirement)], then=Then.NOTHING), started)
+
+
 def test_the_spec_requirements_may_change(started: Path):
     edit_file(EditInput(edits=[edit("setup.py", '"httpx>=0.25.0,<0.28.0"', '"httpx>=0.25.0"')], then=Then.NOTHING), started)
     assert '"httpx>=0.25.0"' in (started / ROOT / "setup.py").read_text()

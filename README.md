@@ -41,8 +41,9 @@ A deterministic verifier (no model) checks 19 constraints and says which failed 
   are not judged are only counted.
 - `judge`: the trusted final look, in stages that resume across calls: diff, lock, install
   (`uv pip check`), build (the wheel and the requirement it declares), public tests (failures rerun
-  once), hidden tests (upstream's post-upgrade test files from GitHub, sha256-checked) and a shim scan
-  of the added lines. It writes `.judge/judgement.json`.
+  once), hidden tests (upstream's post-upgrade test files from GitHub, sha256-checked), an import probe
+  (what importing the project does, against a clean interpreter) and a shim scan of the added code. It
+  writes `.judge/judgement.json`.
 
 ### Tasks
 
@@ -61,8 +62,8 @@ Every instance is a real upstream change, validated by the build-time oracle bel
 | Instance | Repository (licence) | Upgrade | Judged tests: public / hidden | Upstream's change | Fit |
 |---|---|---|---|---|---|
 | `click-repl-click-8.2` | [click-contrib/click-repl](https://github.com/click-contrib/click-repl) (MIT) | click 8.1.8 → 8.3.1 (Python 3.12) | 59 (9 excluded) / 11 | [b84191aec2](https://github.com/click-contrib/click-repl/commit/b84191aec21b407b3cb3374ff1ab000887d38f29): 3 files, +25 lines | hosted |
-| `emcee-numpy-2` | [dfm/emcee](https://github.com/dfm/emcee) (MIT) | numpy 1.26.4 → 2.0.0 (Python 3.12) | 85 (9 excluded) / 8 | [9c5f59b6ca](https://github.com/dfm/emcee/commit/9c5f59b6ca2fce111cc7348bda415253e0e1c1b0): 1 files, +33 lines | hosted |
-| `ffn-pandas-3` | [pmorissette/ffn](https://github.com/pmorissette/ffn) (MIT) | pandas 2.3.3 → 3.0.1 (Python 3.12) | 50 (1 excluded) / 44 | [bc8e904fa3](https://github.com/pmorissette/ffn/commit/bc8e904fa324bcbed573f2b13055713df1a055c7): 1 files, +9 lines | hosted |
+| `emcee-numpy-2` | [dfm/emcee](https://github.com/dfm/emcee) (MIT) | numpy 1.26.4 → 2.0.0 (Python 3.12) | 85 (9 excluded) / 8 | [9c5f59b6ca](https://github.com/dfm/emcee/commit/9c5f59b6ca2fce111cc7348bda415253e0e1c1b0): 1 files, +33 lines | local |
+| `ffn-pandas-3` | [pmorissette/ffn](https://github.com/pmorissette/ffn) (MIT) | pandas 2.3.3 → 3.0.1 (Python 3.12) | 50 (1 excluded) / 44 | [bc8e904fa3](https://github.com/pmorissette/ffn/commit/bc8e904fa324bcbed573f2b13055713df1a055c7): 1 files, +9 lines | local |
 | `flask-marshmallow-marshmallow-4` | [marshmallow-code/flask-marshmallow](https://github.com/marshmallow-code/flask-marshmallow) (MIT) | marshmallow 3.26.1 → 4.0.0 (Python 3.12) | 44 (5 excluded) / 8 | [d4c087e018](https://github.com/marshmallow-code/flask-marshmallow/commit/d4c087e0186e179f38817006bec4b2a8f277302d): 5 files, +34 lines | hosted |
 | `flask-restx-werkzeug-3` | [python-restx/flask-restx](https://github.com/python-restx/flask-restx) (BSD-3-Clause) | Werkzeug 2.3.8 → 3.0.1 (Python 3.11) | 1223 (9 excluded) / 47 | [0c441149ee](https://github.com/python-restx/flask-restx/commit/0c441149ee7de5f04710d24bdc252acb46fdbe37): 4 files, +88 lines | hosted |
 | `flask-sqlalchemy-sqlalchemy-2` | [pallets-eco/flask-sqlalchemy](https://github.com/pallets-eco/flask-sqlalchemy) (BSD-3-Clause) | SQLAlchemy 1.4.46 → 2.0.0 (Python 3.11) | 118 (3 excluded) / 53 | [7f94bca1b1](https://github.com/pallets-eco/flask-sqlalchemy/commit/7f94bca1b1e7b1bff0ad172b6130bb3e32060f27): 1 files, +4 lines | hosted |
@@ -103,7 +104,7 @@ calls may take minutes.
 
 The verifier recomputes everything it can itself: the pristine record against the catalog's tree hash,
 every changed file and added line, the spec's requirements (its own reader), the lock's pins and hashes,
-and the shim scan. It takes only what needs execution (install, build, tests) from the judge's record,
+and the shim scan. It takes only what needs execution (install, build, tests, the import probe) from the judge's record,
 after showing that record is this run's, for this instance, with nothing changed since.
 
 | # | Id | Holds when |
@@ -121,12 +122,12 @@ after showing that record is this run's, for this instance, with nothing changed
 | 11 | `spec_scope` | The spec changed only the dependency's requirement (and what the upgrade moves with it); no URLs; the rest of the file unchanged |
 | 12 | `spec_admits_target` | The requirement admits the target (and excludes the old version when upstream's did) |
 | 13 | `lock_target` | The judged lock pins exactly the target, with hashes PyPI serves for it, and is unchanged since judging |
-| 14 | `lock_scope` | Every other package in the lock is where the validated post-upgrade lock puts it |
+| 14 | `lock_scope` | Every other package in the lock keeps its pre-upgrade version; one the upgrade moves (collateral), brings in or drops may instead be where upstream's lock has it |
 | 15 | `installed_target` | The judged environment has the target installed and `uv pip check` is clean |
 | 16 | `builds` | The wheel builds, and its requirement on the dependency admits the target |
 | 17 | `public_tests_pass` | Every judged test of the repository passes |
 | 18 | `hidden_tests_pass` | Every one of upstream's post-upgrade tests passes |
-| 19 | `no_shims` | No shim in the added lines (warning filters, `sys.modules`, reloads, test or version sniffing, monkeypatching the library, `pydantic.v1`) |
+| 19 | `no_shims` | No shim in the added code, however spelled (the warnings module, `sys.modules` and import tricks, reflection on modules, `exec`, patching the library, version or test sniffing, `pydantic.v1`), and nothing unexpected when the project is imported (warning filters, the warnings module, import hooks, the library's modules and classes) |
 
 How the verdict is scored:
 - **Valid** only when all 19 hold. The message then says so.
@@ -187,7 +188,10 @@ From those runs:
 - **Breakage.** Some public test must fail in R2, or some hidden test in R6, so a bare version bump
   cannot pass.
 - **Limits** come from upstream's own change (its source changes, and its spec's requirements).
-- **Shim patterns** that upstream's own added lines match are dropped.
+- **Shim rules** that upstream's own change breaks are exempt for the instance (`shim_exempt`:
+  flask-restx's `warnings.simplefilter` and `importlib.metadata.version`, pydantic-yaml's
+  `pydantic.version.VERSION`), and what importing upstream's tree does is expected of it
+  (`probe_expected`: ffn attaches its functions to pandas' `PandasObject`, as it always has).
 - **The gold case.** Upstream's change, replayed as `edit_file` replacements (`python -m
   plugin.tools_dev.cases`), must be valid at 1.0.
 
@@ -236,8 +240,10 @@ order:
   `uv run python -m plugin.tools_dev.onboard <instance> [--write]`. It runs the oracle, R1–R6, every
   cell twice, and the evidence goes to `~/mochi-dev/runs/dep-upgrade/build/<instance>/oracle.json`.
 - **The cases:** `uv run python -m plugin.tools_dev.cases --adversarial respx-httpx-0.28 geojson-pydantic-pydantic-2`
-  writes a gold case per instance (upstream's change as `edit_file` and `write_file` calls) and 13 wrong
-  submissions on each of the two instances named.
+  writes a gold case per instance (upstream's change as `edit_file` and `write_file` calls) and 21 wrong
+  submissions on each of the two instances named. `review_*` cases come from the independent review
+  (alternative correct migrations, its evasions) and `regress_*` cases are hand-made variants of them;
+  they are kept as files.
 - **Through NanoAgent's real task runner:** with a scripted agent instead of a model,
   `python scripted_task.py <plugin> tests/cases/<case>.json --sandbox seatbelt`, or every case with
   `python ~/mochi-dev/harness/run_cases.py <plugin> tests/cases/*.json --jobs 1 --sandbox seatbelt`.
@@ -252,13 +258,20 @@ order:
   of its resolution date, not today's newest.
 - **Hosted fit.** Set-up and judging must fit a hosted run (180 s for everything, with the model's
   steps). Instances tagged `local` need a runner whose tool calls may take minutes. The tags come from
-  one gold run per instance on an Apple-silicon Mac (the load average is in the catalog); emcee (55 s of
-  tool time) and ffn (51 s) sit close to the 60 s line and may not fit a slower host.
+  one gold run per instance on an Apple-silicon Mac (the load average is in the catalog). emcee and ffn
+  are `local`: their gold runs took 72 s and 65 s of tool time (59 s and 63 s on a quieter re-run), most
+  of it their own test suites; the import probe adds about 7 s to ffn, which imports pandas and
+  matplotlib twice.
 - **No sockets in tests.** The oracle runs every test with no network at all, as NanoAgent's macOS
   sandbox does (no DNS, no loopback server, no Unix socket), so a test that needs one is left out of the
   judged sets: flask-restx's e-mail checks that resolve gmail.com, for one.
-- **Shims.** The shim scan is a regex scan of the added lines. It catches the common shims, not every
-  conceivable one; the hidden tests catch most partial migrations.
+- **Shims.** The added code is read twice with the same rules: by the judge with `ast`
+  (`src/plugin/shims.py`, recorded in the judgement) and by the verifier from the tokens
+  (`verifier/shims.py`; NanoAgent's verifiers may not import `ast`). Names resolve through imports and
+  aliases, strings fold (`"filter" + "warnings"`, `chr`, `join`, f-strings, escapes, rot13), and
+  `getattr`, `vars`, `__dict__` and computed imports are followed. Code can still hide a name from any
+  reading (built from bytes, say); the import probe then shows what the project's import did, but only
+  at import time: a shim that acts later, inside a function, is left to the hidden tests.
 - **Validated platforms.** Instances are validated on macOS (Apple silicon) only. The locks are
   universal and `data/pythons.json` pins Linux x86-64 interpreters, but no instance has been run on
   Linux yet; wheels-only locks may not install on other platforms.

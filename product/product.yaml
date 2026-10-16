@@ -1,6 +1,6 @@
 _ > nanoagent.plugin.manifest.ProductConfig:
 tagline: "Redo a real project's upgrade to a library's new major, checked against upstream's own tests"
-summary: "Each instance is a real commit in which an open-source project upgraded one dependency (httpx, pydantic and more) and changed its code. The agent gets the repository from just before, with the old version installed, raises the requirement and migrates the code. A judge locks and installs exactly the target release from PyPI, builds the wheel, and runs the repository's tests and upstream's post-upgrade tests; a verifier checks 19 constraints, from PyPI's file hashes to shims in the added lines, and says which failed."
+summary: "Each instance is a real commit in which an open-source project upgraded one dependency (httpx, pydantic and more) and changed its code. The agent gets the repository from just before, with the old version installed, raises the requirement and migrates the code. A judge locks and installs exactly the target release from PyPI, builds the wheel, and runs the repository's tests and upstream's post-upgrade tests; a verifier checks 19 constraints, from PyPI's file hashes to shims in the added code and in what importing the project does, and says which failed."
 highlights:
   - "Real upgrades from GitHub, validated by an oracle: the old code must break on the new version, and upstream's change must fix it"
   - "Hidden tests are upstream's own tests after its upgrade"

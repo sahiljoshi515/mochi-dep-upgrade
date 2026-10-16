@@ -4,8 +4,9 @@ Stages: diff (every change against the pristine record) -> lock (the spec as it 
 with everything else held) -> install (exactly that lock, then ``uv pip check``) -> build (the
 wheel, and the requirements it declares) -> public (the repository's tests; failures rerun once)
 -> hidden (upstream's post-upgrade test files, fetched from GitHub at the upgrade commit and
-checked against the catalog, overlaid on a scratch copy and run) -> scan (shims in the added
-lines). Each stage's result goes into ``.judge/progress.json`` under the hash of the tree it judged;
+checked against the catalog, overlaid on a scratch copy and run) -> probe (what importing the
+project does to the warnings filters, the import hooks and the dependency, against a clean
+interpreter) -> scan (shims in the code the change adds, read with ``verifier.shims``). Each stage's result goes into ``.judge/progress.json`` under the hash of the tree it judged;
 a call that runs out of budget returns ``complete: false`` and the next call carries on. When every
 stage is done the judge writes ``.judge/judgement.json`` (``complete: true``) and returns counts and
 the changed files, nothing about the hidden tests. Builds and test runs happen outside the workspace.
@@ -20,7 +21,7 @@ import zipfile
 from pathlib import Path
 
 from contract import JudgeOutput, UpgradeInput
-from plugin import envs, fetch
+from plugin import envs, fetch, probe, shims
 from plugin.common import (
     JUDGE_DIR,
     Budget,
@@ -40,7 +41,7 @@ from plugin.sync import relock, spec_requirements
 from plugin.testing import copy_tree, judged, run_suite
 from verifier import catalog
 from verifier.locks import read_lock
-from verifier.shims import added_lines_by_file, pristine_manifest, scan
+from verifier.shims import added_lines_by_file, pristine_manifest, recorded_problems, scan
 from verifier.trees import changes, matches_any, text_lines, tree_entries, tree_hash, unified
 from verifier.versions import canonical_name
 
@@ -142,7 +143,7 @@ def judge(given: UpgradeInput, workspace: Path, *, budget: Budget | None = None)
             build_ok=bool(stages.get("build", {}).get("ok", False)),
             public_passed=int(public.get("passed", 0)),
             public_failed=int(public.get("failed_count", 0)) + int(public.get("missing_count", 0)),
-            violations=list(stages.get("scan", {}).get("forbidden", [])),
+            violations=[*stages.get("scan", {}).get("shims", []), *(f"importing the project {finding}" for finding in stages.get("probe", {}).get("unexpected", []))],
             seconds=round(budget.spent, 2),
         )
 
@@ -266,16 +267,33 @@ def judge(given: UpgradeInput, workspace: Path, *, budget: Budget | None = None)
             stages["hidden"].pop("tail", None)
         persist()
 
+    editable_changed = [item for item in changed if matches_any(item["path"], [entry["spec"]["file"], *entry["source_globs"]])]
+    if "probe" not in stages:
+        if not lock_ok:
+            stages["probe"] = {"ran": False, "ok": False, "skipped": skipped, "findings": [], "unexpected": []}
+        else:
+            if not budget.allows(15):
+                return pause("the import probe is next")
+            note = envs.ensure_venv(entry, scratch, (root / JUDGE_DIR / LOCK).read_text(encoding="utf-8"), budget)
+            if note:
+                return pause(note)
+            found = probe.run_probe(root, entry, scratch, editable_changed, budget)
+            if found.get("timed_out"):
+                return pause("the import probe did not finish")
+            stages["probe"] = found
+        persist()
+
     if "scan" not in stages:
-        editable = [entry["spec"]["file"], *entry["source_globs"]]
-        stages["scan"] = {"forbidden": scan(root, [item for item in changed if matches_any(item["path"], editable)], entry["forbidden"])}
+        # Read twice: with ast (recorded, every rule) and from the tokens (what the verifier reads too).
+        recorded = shims.scan(root, editable_changed, entry)
+        stages["scan"] = {"ast": recorded, "shims": sorted(set(recorded_problems(recorded, entry)) | set(scan(root, editable_changed, entry)))}
         persist()
 
     entries_after = tree_entries(root)
     tree_after = tree_hash(entries_after)
     stable = tree_after == tree_now and not state.get("unstable") and changes(manifest["files"], entries_after) == changed
     judgement = {
-        "version": 2,
+        "version": 3,
         "complete": True,
         "instance": entry["id"],
         "catalog_sha256": catalog.entry_sha256(entry),
@@ -291,7 +309,9 @@ def judge(given: UpgradeInput, workspace: Path, *, budget: Budget | None = None)
         "build": stages["build"],
         "public": stages["public"],
         "hidden": stages["hidden"],
-        "forbidden": stages["scan"]["forbidden"],
+        "probe": stages["probe"],
+        "shims": stages["scan"]["shims"],
+        "ast_shims": stages["scan"]["ast"],
         "seconds": round(budget.spent, 2),
         "judged_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
