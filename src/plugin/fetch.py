@@ -63,7 +63,7 @@ def pypi_release(name: str, version: str) -> dict:
 
 def members(data: bytes) -> list[tuple[str, bytes]]:
     """``(relative path, bytes)`` of every regular file in a gzipped tarball, its top folder
-    stripped; refuses absolute or escaping paths and files over :data:`MAX_FILE`."""
+    stripped; absolute or escaping paths and files over :data:`MAX_FILE` are left out."""
     found: list[tuple[str, bytes]] = []
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
         for member in archive:
@@ -74,7 +74,9 @@ def members(data: bytes) -> list[tuple[str, bytes]]:
                 continue
             rel = Path(*parts[1:]).as_posix()
             if member.size > MAX_FILE:
-                raise ToolError(f"{rel} is over {MAX_FILE // (1024 * 1024)} MB")
+                # A file this large never belongs in a workspace (the host refuses it); the checkout and
+                # the validated tree both leave it out.
+                continue
             handle = archive.extractfile(member)
             if handle is None:
                 continue

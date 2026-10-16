@@ -174,7 +174,8 @@ def target(workspace: Path, rel: str) -> tuple[Path, Path, dict, str]:
         raise ToolError(f"only files inside {WORKSPACE_PREFIX}/<instance>/ may change: {rel}")
     root, entry = ready_root(workspace, parts[1])
     inside = Path(*parts[2:]).as_posix()
-    if any(part.startswith(".") for part in parts[2:]) or path.name in FORBIDDEN_NAMES:
+    is_spec = inside == entry["spec"]["file"]
+    if any(part.startswith(".") for part in parts[2:]) or (path.name in FORBIDDEN_NAMES and not is_spec):
         raise ToolError(f"that file may not change: {rel}")
     if not is_editable(entry, inside):
         raise ToolError(f"{inside} may not change: only {entry['spec']['file']} and {', '.join(entry['source_globs'])}")

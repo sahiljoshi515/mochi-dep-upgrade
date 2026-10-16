@@ -1,0 +1,64 @@
+{
+ "note": "Upstream's own change (https://github.com/pallets-eco/flask-sqlalchemy/commit/7f94bca1b1e7b1bff0ad172b6130bb3e32060f27) as exact replacements: valid on every check.",
+ "task": "upgrade-dependency",
+ "arguments": {
+  "instance": "flask-sqlalchemy-sqlalchemy-2"
+ },
+ "steps": [
+  {
+   "tool": "start_upgrade",
+   "arguments": {
+    "instance": "flask-sqlalchemy-sqlalchemy-2"
+   },
+   "save_as": "start"
+  },
+  {
+   "tool": "edit_file",
+   "arguments": {
+    "edits": [
+     {
+      "path": "dep-upgrade/flask-sqlalchemy-sqlalchemy-2/src/flask_sqlalchemy/extension.py",
+      "old": "            if name in mod.__all__:\n",
+      "new": "            if hasattr(mod, name):\n"
+     },
+     {
+      "path": "dep-upgrade/flask-sqlalchemy-sqlalchemy-2/src/flask_sqlalchemy/extension.py",
+      "old": "\n        for mod in (sa, sa.orm):\n",
+      "new": "\n        if name.startswith(\"_\"):\n            raise AttributeError(name)\n\n        for mod in (sa, sa.orm):\n"
+     }
+    ],
+    "then": "sync_and_test"
+   },
+   "save_as": "edited"
+  },
+  {
+   "tool": "judge",
+   "arguments": {
+    "instance": "flask-sqlalchemy-sqlalchemy-2"
+   },
+   "save_as": "judged"
+  },
+  {
+   "tool": "submit",
+   "arguments": {
+    "instance": "flask-sqlalchemy-sqlalchemy-2",
+    "dependency": "SQLAlchemy",
+    "from_version": "1.4.46",
+    "to_version": "2.0.0",
+    "requirement": "SQLAlchemy>=1.4.18",
+    "changed_files": [
+     "src/flask_sqlalchemy/extension.py"
+    ],
+    "migration": [
+     "Kept SQLAlchemy's requirement (it already admits 2.0.0) and re-locked to 2.0.0",
+     "Migrated src/flask_sqlalchemy/extension.py to the SQLAlchemy 2.0.0 API"
+    ]
+   }
+  }
+ ],
+ "answer": "Upgraded, judged and submitted.",
+ "expect": {
+  "valid": true,
+  "score_min": 1.0
+ }
+}

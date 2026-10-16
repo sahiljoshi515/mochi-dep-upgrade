@@ -1,0 +1,97 @@
+{
+ "note": "Upstream's own change (https://github.com/click-contrib/click-repl/commit/b84191aec21b407b3cb3374ff1ab000887d38f29) as exact replacements: valid on every check.",
+ "task": "upgrade-dependency",
+ "arguments": {
+  "instance": "click-repl-click-8.2"
+ },
+ "steps": [
+  {
+   "tool": "start_upgrade",
+   "arguments": {
+    "instance": "click-repl-click-8.2"
+   },
+   "save_as": "start"
+  },
+  {
+   "tool": "edit_file",
+   "arguments": {
+    "edits": [
+     {
+      "path": "dep-upgrade/click-repl-click-8.2/setup.cfg",
+      "old": "click>=7.0,<8.2.0",
+      "new": "click>=7.0,<9.0"
+     },
+     {
+      "path": "dep-upgrade/click-repl-click-8.2/click_repl/_repl.py",
+      "old": "                    group_ctx.protected_args = old_protected_args\n",
+      "new": "                    _set_protected_args(group_ctx, old_protected_args)\n"
+     },
+     {
+      "path": "dep-upgrade/click-repl-click-8.2/click_repl/_repl.py",
+      "old": "                    group_ctx.protected_args = args\n",
+      "new": "                    _set_protected_args(group_ctx, args)\n"
+     },
+     {
+      "path": "dep-upgrade/click-repl-click-8.2/click_repl/_repl.py",
+      "old": "                old_protected_args = group_ctx.protected_args\n",
+      "new": "                old_protected_args = _get_protected_args(group_ctx)\n"
+     },
+     {
+      "path": "dep-upgrade/click-repl-click-8.2/click_repl/_repl.py",
+      "old": "from .utils import _execute_internal_and_sys_cmds\n",
+      "new": "from .utils import (\n    _execute_internal_and_sys_cmds,\n    _get_protected_args,\n    _set_protected_args,\n)\n"
+     },
+     {
+      "path": "dep-upgrade/click-repl-click-8.2/click_repl/utils.py",
+      "old": "                args = [*sub_ctx.protected_args, *sub_ctx.args]\n",
+      "new": "                args = [*_get_protected_args(sub_ctx), *sub_ctx.args]\n"
+     },
+     {
+      "path": "dep-upgrade/click-repl-click-8.2/click_repl/utils.py",
+      "old": "                args = ctx.protected_args + ctx.args\n",
+      "new": "                args = _get_protected_args(ctx) + ctx.args\n"
+     },
+     {
+      "path": "dep-upgrade/click-repl-click-8.2/click_repl/utils.py",
+      "old": "\ndef _resolve_context(args: list[str], ctx: click.Context) -> click.Context:\n",
+      "new": "\ndef _get_protected_args(ctx: click.Context) -> list[str]:\n    # In click >= 8.2, protected_args is a read-only property over _protected_args.\n    if hasattr(ctx, \"_protected_args\"):\n        return t.cast(list[str], getattr(ctx, \"_protected_args\"))\n    return ctx.protected_args\n\n\ndef _set_protected_args(ctx: click.Context, args: list[str]) -> None:\n    if hasattr(ctx, \"_protected_args\"):\n        setattr(ctx, \"_protected_args\", args)\n    else:\n        ctx.protected_args = args\n\n\ndef _resolve_context(args: list[str], ctx: click.Context) -> click.Context:\n"
+     }
+    ],
+    "then": "sync_and_test"
+   },
+   "save_as": "edited"
+  },
+  {
+   "tool": "judge",
+   "arguments": {
+    "instance": "click-repl-click-8.2"
+   },
+   "save_as": "judged"
+  },
+  {
+   "tool": "submit",
+   "arguments": {
+    "instance": "click-repl-click-8.2",
+    "dependency": "click",
+    "from_version": "8.1.8",
+    "to_version": "8.3.1",
+    "requirement": "click>=7.0,<9.0",
+    "changed_files": [
+     "click_repl/_repl.py",
+     "click_repl/utils.py",
+     "setup.cfg"
+    ],
+    "migration": [
+     "Raised click to admit 8.3.1 in setup.cfg",
+     "Migrated click_repl/_repl.py to the click 8.3.1 API",
+     "Migrated click_repl/utils.py to the click 8.3.1 API"
+    ]
+   }
+  }
+ ],
+ "answer": "Upgraded, judged and submitted.",
+ "expect": {
+  "valid": true,
+  "score_min": 1.0
+ }
+}

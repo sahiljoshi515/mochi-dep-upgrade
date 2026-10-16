@@ -1,0 +1,208 @@
+{
+ "note": "A source file changes after the judge ran.",
+ "task": "upgrade-dependency",
+ "arguments": {
+  "instance": "geojson-pydantic-pydantic-2"
+ },
+ "steps": [
+  {
+   "tool": "start_upgrade",
+   "arguments": {
+    "instance": "geojson-pydantic-pydantic-2"
+   },
+   "save_as": "start"
+  },
+  {
+   "tool": "edit_file",
+   "arguments": {
+    "edits": [
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/pyproject.toml",
+      "old": "pydantic~=1.0",
+      "new": "pydantic~=2.0"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/features.py",
+      "old": "        return self.features[index]\n\n    _validate_bbox = validator(\"bbox\", allow_reuse=True)(validate_bbox)\n",
+      "new": "        return self.features[index]\n\n    _validate_bbox = field_validator(\"bbox\")(validate_bbox)\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/features.py",
+      "old": "class FeatureCollection(GenericModel, Generic[Geom, Props], GeoInterfaceMixin):\n",
+      "new": "class FeatureCollection(BaseModel, Generic[Geom, Props], GeoInterfaceMixin):\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/features.py",
+      "old": "    @validator(\"geometry\", pre=True, always=True)\n",
+      "new": "    @field_validator(\"geometry\", mode=\"before\")\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/features.py",
+      "old": "    _validate_bbox = validator(\"bbox\", allow_reuse=True)(validate_bbox)\n",
+      "new": "    _validate_bbox = field_validator(\"bbox\")(validate_bbox)\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/features.py",
+      "old": "class Feature(GenericModel, Generic[Geom, Props], GeoInterfaceMixin):\n",
+      "new": "class Feature(BaseModel, Generic[Geom, Props], GeoInterfaceMixin):\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/features.py",
+      "old": "from pydantic import BaseModel, Field, StrictInt, StrictStr, validator\nfrom pydantic.generics import GenericModel\n",
+      "new": "from pydantic import BaseModel, Field, StrictInt, StrictStr, field_validator\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/geometries.py",
+      "old": "    raise ValidationError(\n        errors=[ErrorWrapper(ValueError(\"Unknown type\"), loc=\"type\")],\n        model=_GeometryBase,\n    )\n",
+      "new": "\n    raise ValueError(f\"Unknown type: {obj['type']}\")\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/geometries.py",
+      "old": "        return Polygon.parse_obj(obj)\n    elif obj[\"type\"] == \"MultiPolygon\":\n",
+      "new": "        return Polygon.parse_obj(obj)\n\n    elif obj[\"type\"] == \"MultiPolygon\":\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/geometries.py",
+      "old": "        return MultiLineString.parse_obj(obj)\n    elif obj[\"type\"] == \"Polygon\":\n",
+      "new": "        return MultiLineString.parse_obj(obj)\n\n    elif obj[\"type\"] == \"Polygon\":\n"
+     }
+    ],
+    "then": "nothing"
+   }
+  },
+  {
+   "tool": "edit_file",
+   "arguments": {
+    "edits": [
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/geometries.py",
+      "old": "        return LineString.parse_obj(obj)\n    elif obj[\"type\"] == \"MultiLineString\":\n",
+      "new": "        return LineString.parse_obj(obj)\n\n    elif obj[\"type\"] == \"MultiLineString\":\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/geometries.py",
+      "old": "        return MultiPoint.parse_obj(obj)\n    elif obj[\"type\"] == \"LineString\":\n",
+      "new": "        return MultiPoint.parse_obj(obj)\n\n    elif obj[\"type\"] == \"LineString\":\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/geometries.py",
+      "old": "        return Point.parse_obj(obj)\n    elif obj[\"type\"] == \"MultiPoint\":\n",
+      "new": "        return Point.parse_obj(obj)\n\n    elif obj[\"type\"] == \"MultiPoint\":\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/geometries.py",
+      "old": "        raise ValidationError(\n            errors=[\n                ErrorWrapper(ValueError(\"Missing 'type' field in geometry\"), loc=\"type\")\n            ],\n            model=_GeometryBase,\n        )\n",
+      "new": "        raise ValueError(\"Missing 'type' field in geometry\")\n\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/geometries.py",
+      "old": "            )\n        return geometries\n",
+      "new": "            )\n\n        return geometries\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/geometries.py",
+      "old": "            )\n        if len({geom.type for geom in geometries}) == 1:\n",
+      "new": "            )\n\n        if len({geom.type for geom in geometries}) == 1:\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/geometries.py",
+      "old": "            )\n        if any(geom.type == \"GeometryCollection\" for geom in geometries):\n",
+      "new": "            )\n\n        if any(geom.type == \"GeometryCollection\" for geom in geometries):\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/geometries.py",
+      "old": "    @validator(\"geometries\")\n",
+      "new": "    @field_validator(\"geometries\")\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/geometries.py",
+      "old": "        return f\"{self.type.upper()}{z}{geometries}\"\n\n    _validate_bbox = validator(\"bbox\", allow_reuse=True)(validate_bbox)\n\n    @field_validator(\"geometries\")\n",
+      "new": "        return f\"{self.type.upper()}{z}{geometries}\"\n\n    _validate_bbox = field_validator(\"bbox\")(validate_bbox)\n\n    @field_validator(\"geometries\")\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/geometries.py",
+      "old": "        return any(_lines_has_z(polygon) for polygon in self.coordinates)\n\n    @validator(\"coordinates\")\n    def check_closure(cls, coordinates: List) -> List:\n        \"\"\"Validate that Polygon is closed (first and last coordinate are the same).\"\"\"\n",
+      "new": "        return any(_lines_has_z(polygon) for polygon in self.coordinates)\n\n    @field_validator(\"coordinates\")\n    def check_closure(cls, coordinates: List) -> List:\n        \"\"\"Validate that Polygon is closed (first and last coordinate are the same).\"\"\"\n"
+     }
+    ],
+    "then": "nothing"
+   }
+  },
+  {
+   "tool": "edit_file",
+   "arguments": {
+    "edits": [
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/geometries.py",
+      "old": "    @validator(\"coordinates\")\n",
+      "new": "    @field_validator(\"coordinates\")\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/geometries.py",
+      "old": "    _validate_bbox = validator(\"bbox\", allow_reuse=True)(validate_bbox)\n",
+      "new": "    _validate_bbox = field_validator(\"bbox\")(validate_bbox)\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/geometries.py",
+      "old": "from pydantic import BaseModel, Field, ValidationError, validator\nfrom pydantic.error_wrappers import ErrorWrapper\n",
+      "new": "from pydantic import BaseModel, Field, field_validator\n"
+     },
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/types.py",
+      "old": "    LineStringCoords = conlist(Position, min_items=2)\n    LinearRing = conlist(Position, min_items=4)\n",
+      "new": "    LineStringCoords = conlist(Position, min_length=2)\n    LinearRing = conlist(Position, min_length=4)\n"
+     }
+    ],
+    "then": "sync_and_test"
+   },
+   "save_as": "edited"
+  },
+  {
+   "tool": "judge",
+   "arguments": {
+    "instance": "geojson-pydantic-pydantic-2"
+   },
+   "save_as": "judged"
+  },
+  {
+   "tool": "edit_file",
+   "arguments": {
+    "edits": [
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/geojson_pydantic/features.py",
+      "old": "\"\"\"pydantic models for GeoJSON Feature objects.\"\"\"\n",
+      "new": "# changed after judging\n\"\"\"pydantic models for GeoJSON Feature objects.\"\"\"\n"
+     }
+    ],
+    "then": "nothing"
+   }
+  },
+  {
+   "tool": "submit",
+   "arguments": {
+    "instance": "geojson-pydantic-pydantic-2",
+    "dependency": "pydantic",
+    "from_version": "1.10.11",
+    "to_version": "2.0.2",
+    "requirement": "pydantic~=2.0",
+    "changed_files": [
+     "geojson_pydantic/features.py",
+     "geojson_pydantic/geometries.py",
+     "geojson_pydantic/types.py",
+     "pyproject.toml"
+    ],
+    "migration": [
+     "Raised pydantic to admit 2.0.2 in pyproject.toml",
+     "Migrated geojson_pydantic/features.py to the pydantic 2.0.2 API",
+     "Migrated geojson_pydantic/geometries.py to the pydantic 2.0.2 API",
+     "Migrated geojson_pydantic/types.py to the pydantic 2.0.2 API"
+    ]
+   }
+  }
+ ],
+ "answer": "Upgraded, judged and submitted.",
+ "expect": {
+  "valid": false,
+  "message_contains": "changed after the judge ran"
+ }
+}

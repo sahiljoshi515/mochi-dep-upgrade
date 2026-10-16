@@ -3,8 +3,8 @@
 A `nanoagent.plugin/v1` plugin, created by `nanoagent plugin new` with the template's checks kept.
 
 Redo a real open-source project's upgrade of one dependency to its new major version. Each instance is
-a commit in which upstream itself upgraded the dependency and changed its code. The agent gets the
-repository at the commit before, with the old version installed, and must raise the requirement and
+a real change (a commit, a short series of commits, or a merged PR) in which upstream itself upgraded
+the dependency and changed its code. The agent gets the repository at the commit before, with the old version installed, and must raise the requirement and
 migrate the code so that:
 - the project locks and installs exactly the target release, with the files PyPI serves for it;
 - its wheel builds;
@@ -54,27 +54,50 @@ A deterministic verifier (no model) checks 19 constraints and says which failed 
 
 ### The instances
 
-Every instance is a real commit, validated by the build-time oracle below. The table is generated from
+Every instance is a real upstream change, validated by the build-time oracle below. The table is generated from
 `src/plugin/data/catalog.json` by `python -m plugin.tools_dev.readme`.
 
 <!-- instances -->
 | Instance | Repository (licence) | Upgrade | Judged tests: public / hidden | Upstream's change | Fit |
 |---|---|---|---|---|---|
-| `pydantic-yaml-pydantic-2` | [NowanIlfideme/pydantic-yaml](https://github.com/NowanIlfideme/pydantic-yaml) (MIT) | pydantic 1.10.11 → 2.0.3 (Python 3.11) | 21 (4 excluded) / 11 | [c3ad43ea76](https://github.com/NowanIlfideme/pydantic-yaml/commit/c3ad43ea76294a27da61dc88e418e8785dfdad53): 8 files, +346 lines | local |
-| `respx-httpx-0.28` | [lundberg/respx](https://github.com/lundberg/respx) (BSD-3-Clause) | httpx 0.27.2 → 0.28.1 (Python 3.12) | 313 (8 excluded) / 123 | [179c65131b](https://github.com/lundberg/respx/commit/179c65131b16e895e9da0e2d629aab3db6a97694): 2 files, +7 lines | local |
+| `click-repl-click-8.2` | [click-contrib/click-repl](https://github.com/click-contrib/click-repl) (MIT) | click 8.1.8 → 8.3.1 (Python 3.12) | 59 (9 excluded) / 11 | [b84191aec2](https://github.com/click-contrib/click-repl/commit/b84191aec21b407b3cb3374ff1ab000887d38f29): 3 files, +25 lines | hosted |
+| `emcee-numpy-2` | [dfm/emcee](https://github.com/dfm/emcee) (MIT) | numpy 1.26.4 → 2.0.0 (Python 3.12) | 85 (9 excluded) / 8 | [9c5f59b6ca](https://github.com/dfm/emcee/commit/9c5f59b6ca2fce111cc7348bda415253e0e1c1b0): 1 files, +33 lines | hosted |
+| `ffn-pandas-3` | [pmorissette/ffn](https://github.com/pmorissette/ffn) (MIT) | pandas 2.3.3 → 3.0.1 (Python 3.12) | 50 (1 excluded) / 44 | [bc8e904fa3](https://github.com/pmorissette/ffn/commit/bc8e904fa324bcbed573f2b13055713df1a055c7): 1 files, +9 lines | hosted |
+| `flask-marshmallow-marshmallow-4` | [marshmallow-code/flask-marshmallow](https://github.com/marshmallow-code/flask-marshmallow) (MIT) | marshmallow 3.26.1 → 4.0.0 (Python 3.12) | 44 (5 excluded) / 8 | [d4c087e018](https://github.com/marshmallow-code/flask-marshmallow/commit/d4c087e0186e179f38817006bec4b2a8f277302d): 5 files, +34 lines | hosted |
+| `flask-restx-werkzeug-3` | [python-restx/flask-restx](https://github.com/python-restx/flask-restx) (BSD-3-Clause) | Werkzeug 2.3.8 → 3.0.1 (Python 3.11) | 1223 (9 excluded) / 47 | [0c441149ee](https://github.com/python-restx/flask-restx/commit/0c441149ee7de5f04710d24bdc252acb46fdbe37): 4 files, +88 lines | hosted |
+| `flask-sqlalchemy-sqlalchemy-2` | [pallets-eco/flask-sqlalchemy](https://github.com/pallets-eco/flask-sqlalchemy) (BSD-3-Clause) | SQLAlchemy 1.4.46 → 2.0.0 (Python 3.11) | 118 (3 excluded) / 53 | [7f94bca1b1](https://github.com/pallets-eco/flask-sqlalchemy/commit/7f94bca1b1e7b1bff0ad172b6130bb3e32060f27): 1 files, +4 lines | hosted |
+| `geojson-pydantic-pydantic-2` | [developmentseed/geojson-pydantic](https://github.com/developmentseed/geojson-pydantic) (MIT) | pydantic 1.10.11 → 2.0.2 (Python 3.11) | 133 (1 excluded) / 114 | [40dbafb901](https://github.com/developmentseed/geojson-pydantic/commit/40dbafb90172b161f0945d1917dbbcfb003a1f20): 4 files, +27 lines | hosted |
+| `pydantic-yaml-pydantic-2` | [NowanIlfideme/pydantic-yaml](https://github.com/NowanIlfideme/pydantic-yaml) (MIT) | pydantic 1.10.11 → 2.0.3 (Python 3.11) | 21 (4 excluded) / 11 | [c3ad43ea76](https://github.com/NowanIlfideme/pydantic-yaml/commit/c3ad43ea76294a27da61dc88e418e8785dfdad53): 8 files, +346 lines | hosted |
+| `respx-httpx-0.28` | [lundberg/respx](https://github.com/lundberg/respx) (BSD-3-Clause) | httpx 0.27.2 → 0.28.1 (Python 3.12) | 313 (8 excluded) / 123 | [179c65131b](https://github.com/lundberg/respx/commit/179c65131b16e895e9da0e2d629aab3db6a97694): 2 files, +7 lines | hosted |
 <!-- /instances -->
+
+Candidates the oracle turned down, and why (`src/plugin/tools_dev/rejected.json`):
+
+<!-- rejected -->
+| Candidate | Upgrade | Why it is not offered |
+|---|---|---|
+| [absent1706/sqlalchemy-mixins](https://github.com/absent1706/sqlalchemy-mixins/commit/e0aa411c23e906b90731a981288501c95664fdf2) | SQLAlchemy | Strict hidden rule: upstream's post-upgrade tests import SQLAlchemy-2-only API (DeclarativeBase), so none passes on the old version (R4); and 29 of 41 base tests fail even with upstream's code on 2.0. |
+| [wtforms/wtforms-sqlalchemy](https://github.com/wtforms/wtforms-sqlalchemy/commit/1845da429005e3e7c21d822207322985e11f814c) | SQLAlchemy | 6 of 21 base tests (28.6%) fail with upstream's own code on SQLAlchemy 2 (upstream rewrote them): over the 20% exclusion cap (the lead's call: borderline counts as rejected while 6+ strict instances remain). |
+| [ewels/rich-click](https://github.com/ewels/rich-click/commit/2268fc4e197c988f14076a138f797dc564367a47) | click | No hidden tests: upstream's change touched no test file. |
+| [sloria/environs](https://github.com/sloria/environs/commit/b5a32c90a2ec08a7eaf9fe4afd3152683b676448) | marshmallow | Nothing breaks on marshmallow 4.0 final: the only failing tests test marshmallow 3's behaviour and fail with upstream's code too (a bare version bump would pass). |
+| [capitalone/datacompy](https://github.com/capitalone/datacompy/commit/6a7d27d1781632a42a922e3da8ea4ef4668e70ca) | pandas | Its spec needs fugue-sql-antlr, which had no wheels at the time; environments are wheels-only (members need no compiler). |
+| [Colin-b/pytest_httpx](https://github.com/Colin-b/pytest_httpx/commit/1571050846) | httpx | Upstream's merge changes only the spec, the version and the tests: a bare version bump suffices. |
+<!-- /rejected -->
 
 ### The task, step by step
 
 1. `start_upgrade` with the instance (again while `complete` is false).
 2. Read what the breaking errors point at.
 3. One `edit_file` with `then: sync_and_test`: raise the requirement so it admits the target, and
-   migrate the source with exact replacements.
+   migrate the source with exact replacements (at most 10 per call; a larger migration takes a second
+   call, and only the last one needs to sync and test).
 4. A fix-up `edit_file` if the sync failed or judged tests still fail.
 5. `judge` and `submit` in the same step.
 
-This fits the hosted runner's 6 steps when the instance is tagged `hosted` (set-up and judging measured
-short enough). `local` instances need a runner whose tool calls may take minutes.
+This fits the hosted runner's 6 steps when the instance is tagged `hosted`: its gold run, under the
+sandbox from a cold cache, took at most 60 s of tool time (set-up at most 45 s and judging at most 40 s,
+each in one call) and at most six calls, submit included. `local` instances need a runner whose tool
+calls may take minutes.
 
 ### The verdict: 19 constraints
 
@@ -129,6 +152,22 @@ How the verdict is scored:
 
 ### How an instance is validated (`python -m plugin.tools_dev.onboard`)
 
+Each instance starts as a recipe in `src/plugin/tools_dev/recipes.json`. A recipe names:
+- the repository, upstream's commit, the dependency and the Python version;
+- the spec file and its kind;
+- the editable source globs, the test folders, the test requirements and pytest arguments.
+
+Real repositories need a few more settings, each documented in the recipe's notes:
+- `base_commit`, when upstream's upgrade spans several commits, or `merge`, to take a merged PR
+  against its first parent;
+- `base_constraints`, when the spec already admits the new version: the pre-upgrade lock is held
+  below it, as upstream's CI ran;
+- `resolution_date`, when upstream's commit came before the new version's release, or when the old
+  version's wheels came later;
+- `install_project` and `env`, for suites that need the project installed or a particular terminal;
+- `build_env`, e.g. a setuptools-scm version given without git history;
+- `post_setup`, files the project's install would generate.
+
 Every cell below runs twice:
 
 | Cell | Source | Tests | Environment |
@@ -167,7 +206,7 @@ src/plugin/
   testing.py              pytest in a scratch copy, with the JSON recorder (runners/pytest_json.py)
   spec.py, fetch.py, pythons.py, common.py
   data/                   catalog.json, locks/<instance>.{base,gold}.txt, pythons.json
-  tools_dev/              onboard (the oracle), recipes.json, cases, readme, record_pythons
+  tools_dev/              onboard (the oracle), recipes.json, rejected.json, cases, fit, readme, record_pythons
 verifier/                 the deterministic verifier: task.py (19 constraints), one module per tool
                           group, and the readers the tools share (specs, locks, trees, shims, catalog)
 tests/                    offline unit tests, replay.py, and the scripted cases (tests/cases)
@@ -196,9 +235,14 @@ order:
 - **An instance, from its recipe:**
   `uv run python -m plugin.tools_dev.onboard <instance> [--write]`. It runs the oracle, R1–R6, every
   cell twice, and the evidence goes to `~/mochi-dev/runs/dep-upgrade/build/<instance>/oracle.json`.
-- **The cases:** `uv run python -m plugin.tools_dev.cases --adversarial respx-httpx-0.28`.
+- **The cases:** `uv run python -m plugin.tools_dev.cases --adversarial respx-httpx-0.28 geojson-pydantic-pydantic-2`
+  writes a gold case per instance (upstream's change as `edit_file` and `write_file` calls) and 13 wrong
+  submissions on each of the two instances named.
 - **Through NanoAgent's real task runner:** with a scripted agent instead of a model,
-  `python scripted_task.py <plugin> tests/cases/<case>.json --sandbox seatbelt`.
+  `python scripted_task.py <plugin> tests/cases/<case>.json --sandbox seatbelt`, or every case with
+  `python ~/mochi-dev/harness/run_cases.py <plugin> tests/cases/*.json --jobs 1 --sandbox seatbelt`.
+- **The fit tags:** `uv run python -m plugin.tools_dev.fit <out-root>/timings.json --load <load average>`
+  from the gold cases run one at a time, then `uv run python -m plugin.tools_dev.readme` for the tables.
 
 ### Limitations
 
@@ -207,8 +251,14 @@ order:
 - **Pinned resolution dates.** Each instance's target is the newest release upstream's spec admits as
   of its resolution date, not today's newest.
 - **Hosted fit.** Set-up and judging must fit a hosted run (180 s for everything, with the model's
-  steps). Instances tagged `local` need a runner whose tool calls may take minutes.
+  steps). Instances tagged `local` need a runner whose tool calls may take minutes. The tags come from
+  one gold run per instance on an Apple-silicon Mac (the load average is in the catalog); emcee (55 s of
+  tool time) and ffn (51 s) sit close to the 60 s line and may not fit a slower host.
+- **No sockets in tests.** The oracle runs every test with no network at all, as NanoAgent's macOS
+  sandbox does (no DNS, no loopback server, no Unix socket), so a test that needs one is left out of the
+  judged sets: flask-restx's e-mail checks that resolve gmail.com, for one.
 - **Shims.** The shim scan is a regex scan of the added lines. It catches the common shims, not every
   conceivable one; the hidden tests catch most partial migrations.
-- **Validated platforms.** Instances are validated on macOS (Apple silicon); a Linux x86-64 sample is
-  checked separately. Wheels-only locks may not install on other platforms.
+- **Validated platforms.** Instances are validated on macOS (Apple silicon) only. The locks are
+  universal and `data/pythons.json` pins Linux x86-64 interpreters, but no instance has been run on
+  Linux yet; wheels-only locks may not install on other platforms.

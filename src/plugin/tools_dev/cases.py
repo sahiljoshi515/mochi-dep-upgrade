@@ -24,30 +24,47 @@ OUT = Path(__file__).resolve().parents[3] / "tests" / "cases"
 
 
 def make_edits(rel: str, before: str, after: str) -> list[dict]:
-    """Exact replacements that turn ``before`` into ``after``, bottom hunk first (so each old text
-    is taken from lines no earlier replacement touched), each widened with context until it occurs
-    once in the text as it stands then."""
+    """Exact replacements that turn ``before`` into ``after``: one per hunk, bottom hunk first (lines
+    above it are still as they were), each widened with context until it occurs once. Hunks whose
+    context would take in lines a later replacement rewrites are merged, so that every replacement's
+    new text is still in the file at the end, as edit_file checks."""
     a = before.splitlines(keepends=True)
     b = after.splitlines(keepends=True)
-    hunks = [op for op in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes() if op[0] != "equal"]
-    current = before
+    matcher = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    hunks = [[i1, i2, j1, j2] for tag, i1, i2, j1, j2 in matcher.get_opcodes() if tag != "equal"]
+    while True:
+        edits, clash = place_hunks(rel, a, b, hunks)
+        if clash is None:
+            return edits
+        upper, lower = hunks[clash - 1], hunks[clash]
+        hunks[clash - 1:clash + 1] = [[upper[0], lower[1], upper[2], lower[3]]]
+
+
+def place_hunks(rel: str, a: list[str], b: list[str], hunks: list[list[int]]) -> tuple[list[dict], int | None]:
+    """The replacements for ``hunks``, applied bottom first, and the index of a hunk whose new text a
+    later replacement overwrote (or None)."""
+    current = list(a)
     edits = []
-    for _, i1, i2, j1, j2 in reversed(hunks):
+    for i1, i2, j1, j2 in reversed(hunks):
         context = 0 if i2 > i1 else 1
         while True:
-            lo, hi = max(0, i1 - context), min(len(a), i2 + context)
-            old = "".join(a[lo:hi])
-            new = "".join(a[lo:i1] + b[j1:j2] + a[i2:hi])
-            if old and current.count(old) == 1:
+            lo, hi = max(0, i1 - context), min(len(current), i2 + context)
+            old = "".join(current[lo:hi])
+            new = "".join(current[lo:i1] + b[j1:j2] + current[i2:hi])
+            if old and "".join(current).count(old) == 1:
                 break
-            if lo == 0 and hi == len(a):
+            if lo == 0 and hi == len(current):
                 raise SystemExit(f"{rel}: no unique context for a hunk")
             context += 1
-        current = current.replace(old, new, 1)
         edits.append({"path": rel, "old": old, "new": new})
-    if current != after:
+        current[i1:i2] = b[j1:j2]
+    final = "".join(current)
+    if final != "".join(b):
         raise SystemExit(f"{rel}: the edits do not reproduce upstream's file")
-    return edits
+    for number, edit in enumerate(edits):
+        if edit["new"] not in final:
+            return edits, len(hunks) - 1 - number
+    return edits, None
 
 
 def upstream_change(entry: dict, work: Path) -> tuple[list[dict], list[dict]]:
@@ -68,8 +85,31 @@ def upstream_change(entry: dict, work: Path) -> tuple[list[dict], list[dict]]:
             continue
         edits += make_edits(rel, base.read_bytes().decode("utf-8"), after)
     if spec_file in entry["gold"]["files"]:
-        edits.insert(0, spec_edit(entry, work, entry["spec"]["upstream_requirement"]))
+        edits[:0] = spec_edits(entry, work)
     return edits, written
+
+
+def spec_edits(entry: dict, work: Path) -> list[dict]:
+    """Upstream's requirement changes in the spec, one exact replacement per changed requirement."""
+    from verifier.specs import read_spec
+    from verifier.versions import parse_requirement
+
+    spec_file, kind = entry["spec"]["file"], entry["spec"]["kind"]
+    folder = work / entry["id"]
+    text = (folder / "base" / spec_file).read_bytes().decode("utf-8")
+    base, _ = read_spec(kind, text)
+    upstream, _ = read_spec(kind, (folder / "c" / spec_file).read_bytes().decode("utf-8"))
+    before = {parse_requirement(item).name: item for item in base}
+    after = {parse_requirement(item).name: item for item in upstream}
+    if set(before) != set(after):
+        raise SystemExit(f"{entry['id']}: upstream adds or removes requirements; write that gold by hand")
+    edits = []
+    for name, old in before.items():
+        if after[name] != old:
+            if text.count(old) != 1:
+                raise SystemExit(f"{entry['id']}: {old!r} does not occur once in {spec_file}")
+            edits.append({"path": spec_file, "old": old, "new": after[name]})
+    return edits
 
 
 def prefixed(entry: dict, items: list[dict]) -> list[dict]:
@@ -85,7 +125,11 @@ def submission(entry: dict, *, requirement: str | None = None, files: list[str] 
         "to_version": entry["target_version"],
         "requirement": requirement if requirement is not None else entry["spec"]["upstream_requirement"],
         "changed_files": files if files is not None else list(entry["gold"]["files"]),
-        "migration": [f"Raised {entry['dependency']} to admit {entry['target_version']} in {entry['spec']['file']}"]
+        "migration": (
+            [f"Raised {entry['dependency']} to admit {entry['target_version']} in {entry['spec']['file']}"]
+            if entry["spec"]["file"] in entry["gold"]["files"]
+            else [f"Kept {entry['dependency']}'s requirement (it already admits {entry['target_version']}) and re-locked to {entry['target_version']}"]
+        )
         + [f"Migrated {rel} to the {entry['dependency']} {entry['target_version']} API" for rel in entry["gold"]["files"] if rel != entry["spec"]["file"]][:7],
     }
     out.update(override)
@@ -104,12 +148,31 @@ def judge_step(entry: dict) -> dict:
     return {"tool": "judge", "arguments": {"instance": entry["id"]}, "save_as": "judged"}
 
 
+MAX_EDITS, MAX_EDIT_TEXT, MAX_WRITE = 10, 8 * 1024, 60 * 1024
+
+
+def batches(items: list[dict], size_of, most_items: int, most_bytes: int) -> list[list[dict]]:
+    """``items`` split into calls of at most ``most_items`` items and ``most_bytes`` bytes."""
+    out: list[list[dict]] = []
+    for item in items:
+        size = size_of(item)
+        if out and len(out[-1]) < most_items and sum(size_of(other) for other in out[-1]) + size <= most_bytes:
+            out[-1].append(item)
+        else:
+            out.append([item])
+    return out
+
+
 def change_steps(entry: dict, edits: list[dict], written: list[dict], then: str = "sync_and_test") -> list[dict]:
+    """The calls that make the change, within each tool's limits; only the last one syncs and tests."""
+    calls = [("write_file", "files", batch) for batch in batches(written, lambda item: len(item["content"].encode()), 5, MAX_WRITE)]
+    calls += [("edit_file", "edits", batch) for batch in batches(edits, lambda item: len(item["old"].encode()) + len(item["new"].encode()), MAX_EDITS, MAX_EDIT_TEXT)]
     steps = []
-    if written:
-        steps.append({"tool": "write_file", "arguments": {"files": prefixed(entry, written), "then": "nothing" if edits else then}})
-    if edits:
-        steps.append({"tool": "edit_file", "arguments": {"edits": prefixed(entry, edits), "then": then}, "save_as": "edited"})
+    for number, (tool, key, batch) in enumerate(calls, 1):
+        step = {"tool": tool, "arguments": {key: prefixed(entry, batch), "then": then if number == len(calls) else "nothing"}}
+        if number == len(calls):
+            step["save_as"] = "edited"
+        steps.append(step)
     return steps
 
 
@@ -143,7 +206,7 @@ def adversarial(entry: dict, work: Path) -> dict[str, dict]:
         entry,
         "Only the requirement is raised; the source is not migrated, so the repository's and upstream's tests fail.",
         [start_step(entry), *change_steps(entry, spec_edits, []), judge_step(entry), submit(files=[spec_file])],
-        {"valid": False, "message_contains": "test(s) did not pass"},
+        {"valid": False, "message_contains": "public test(s)"},
     )
     out["pinned_old_version"] = case(
         entry,
@@ -260,15 +323,20 @@ def main(argv: list[str]) -> int:
     out, work = Path(args.out), Path(args.work)
     out.mkdir(parents=True, exist_ok=True)
     written = 0
+    failed = []
     for entry in catalog.load()["instances"]:
-        (out / f"gold_{entry['id']}.json").write_text(json.dumps(gold(entry, work), indent=1) + "\n", encoding="utf-8")
-        written += 1
-        if entry["id"] in args.adversarial:
-            for row, data in adversarial(entry, work).items():
-                (out / f"wrong_{row}_{entry['id']}.json").write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
-                written += 1
-    print(f"wrote {written} cases to {out}")
-    return 0
+        try:
+            cases = {f"gold_{entry['id']}": gold(entry, work)}
+            if entry["id"] in args.adversarial:
+                cases.update({f"wrong_{row}_{entry['id']}": data for row, data in adversarial(entry, work).items()})
+        except SystemExit as problem:
+            failed.append(f"{entry['id']}: {problem}")
+            continue
+        for name, data in cases.items():
+            (out / f"{name}.json").write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
+            written += 1
+    print(f"wrote {written} cases to {out}" + (f"; FAILED: {failed}" if failed else ""))
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

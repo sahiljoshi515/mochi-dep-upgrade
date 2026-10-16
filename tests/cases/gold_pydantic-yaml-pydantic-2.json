@@ -125,7 +125,7 @@
      "src/pydantic_yaml/loader.py"
     ],
     "migration": [
-     "Raised pydantic to admit 2.0.3 in pyproject.toml",
+     "Kept pydantic's requirement (it already admits 2.0.3) and re-locked to 2.0.3",
      "Migrated src/pydantic_yaml/dumper.py to the pydantic 2.0.3 API",
      "Migrated src/pydantic_yaml/examples/base_models.py to the pydantic 2.0.3 API",
      "Migrated src/pydantic_yaml/examples/common.py to the pydantic 2.0.3 API",

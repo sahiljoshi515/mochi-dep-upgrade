@@ -24,8 +24,9 @@ def test_case(case: Path, tmp_path: Path):
     assert not meets(verdict, data["expect"]), verdict["message"]
 
 
-def test_every_case_ends_in_submit_within_the_hosted_steps():
+def test_every_case_ends_in_submit():
     for case in CASES:
         steps = [step for step in json.loads(case.read_text(encoding="utf-8"))["steps"] if "tool" in step]
         assert steps[-1]["tool"] == "submit", case.name
-        assert len(steps) <= 6, case.name
+        # start, the change (split over calls within the tools' limits), judge, submit
+        assert len(steps) <= 8, case.name

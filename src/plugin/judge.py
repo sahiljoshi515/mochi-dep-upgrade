@@ -41,7 +41,7 @@ from plugin.testing import copy_tree, judged, run_suite
 from verifier import catalog
 from verifier.locks import read_lock
 from verifier.shims import added_lines_by_file, pristine_manifest, scan
-from verifier.trees import changes, text_lines, tree_entries, tree_hash, unified
+from verifier.trees import changes, matches_any, text_lines, tree_entries, tree_hash, unified
 from verifier.versions import canonical_name
 
 DIFF = "diff.patch"
@@ -138,7 +138,7 @@ def judge(given: UpgradeInput, workspace: Path, *, budget: Budget | None = None)
             changed_files=[item["path"] for item in stages.get("diff", {}).get("changed", [])],
             requirement=stages.get("spec", {}).get("requirement", ""),
             locked_version=stages.get("lock", {}).get("dependency_version", ""),
-            installed_version=stages.get("install", {}).get("installed", {}).get(dependency, ""),
+            installed_version=stages.get("install", {}).get("installed", {}).get(canonical_name(dependency), ""),
             build_ok=bool(stages.get("build", {}).get("ok", False)),
             public_passed=int(public.get("passed", 0)),
             public_failed=int(public.get("failed_count", 0)) + int(public.get("missing_count", 0)),
@@ -207,7 +207,7 @@ def judge(given: UpgradeInput, workspace: Path, *, budget: Budget | None = None)
             built = run(
                 [uv(), "build", "--wheel", "--out-dir", str(dist), "--python", str(envs.venv_python(scratch)), "--exclude-newer", entry["resolution_date"], "--index-url", envs.INDEX, str(tree)],
                 cwd=tree,
-                env=envs.env_for(scratch),
+                env={**envs.env_for(scratch), **entry.get("build_env", {})},
                 timeout=budget.slice(BUILD_TIMEOUT),
             )
             if built.timed_out:
@@ -267,7 +267,8 @@ def judge(given: UpgradeInput, workspace: Path, *, budget: Budget | None = None)
         persist()
 
     if "scan" not in stages:
-        stages["scan"] = {"forbidden": scan(root, changed, entry["forbidden"])}
+        editable = [entry["spec"]["file"], *entry["source_globs"]]
+        stages["scan"] = {"forbidden": scan(root, [item for item in changed if matches_any(item["path"], editable)], entry["forbidden"])}
         persist()
 
     entries_after = tree_entries(root)

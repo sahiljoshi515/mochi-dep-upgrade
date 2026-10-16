@@ -88,6 +88,18 @@ def venv_python(scratch: Path) -> Path:
     return venv_dir(scratch) / "bin" / "python"
 
 
+def venv_minor(venv: Path) -> str:
+    """The venv's Python minor version ("3.12"), from its pyvenv.cfg, or empty."""
+    try:
+        for line in (venv / "pyvenv.cfg").read_text(encoding="utf-8").splitlines():
+            key, _, value = line.partition("=")
+            if key.strip() in ("version", "version_info"):
+                return ".".join(value.strip().split(".")[:2])
+    except OSError:
+        pass
+    return ""
+
+
 def ensure_venv(entry: dict, scratch: Path, lock_text: str, budget: Budget) -> str | None:
     """Make sure the scratch venv exists with exactly ``lock_text`` installed (wheels only, hashes
     required). Returns None when ready, or what to do when the budget ran out first."""
@@ -96,6 +108,8 @@ def ensure_venv(entry: dict, scratch: Path, lock_text: str, budget: Budget) -> s
     wanted = sha256_bytes(lock_text.encode("utf-8"))
     if mark.is_file() and mark.read_text(encoding="utf-8").strip() == wanted:
         return None
+    if (venv / "bin" / "python").exists() and venv_minor(venv) != entry["python"]:
+        shutil.rmtree(venv, ignore_errors=True)
     if not (venv / "bin" / "python").exists():
         if not budget.allows(20):
             return "call again to create the project's environment"
@@ -113,7 +127,7 @@ def ensure_venv(entry: dict, scratch: Path, lock_text: str, budget: Budget) -> s
     lock = scratch / "installed.lock"
     lock.write_text(lock_text, encoding="utf-8")
     installed = run(
-        [uv(), "pip", "sync", "--require-hashes", "--only-binary", ":all:", "--index-url", INDEX, "--python", str(venv / "bin" / "python"), str(lock)],
+        [uv(), "pip", "sync", "--require-hashes", "--only-binary", ":all:", "--exclude-newer", entry["resolution_date"], "--index-url", INDEX, "--python", str(venv / "bin" / "python"), str(lock)],
         cwd=scratch,
         env=env_for(scratch, venv),
         timeout=budget.slice(INSTALL_TIMEOUT),

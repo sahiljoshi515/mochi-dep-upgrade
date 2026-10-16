@@ -202,7 +202,10 @@ def verify_task(arguments, output, reference, workspace):
     entries = tree_entries(root) if pristine_ok else []
     changed = changes(manifest["files"], entries) if pristine_ok else []
     derived = [item["path"] for item in changed]
-    added = added_lines_by_file(root, changed) if pristine_ok else {}
+    # Added lines and shims are counted in the editable files only; a change anywhere else already
+    # fails allowed_files_only.
+    editable_changed = [item for item in changed if matches_any(item["path"], editable)]
+    added = added_lines_by_file(root, editable_changed) if pristine_ok else {}
 
     # 5. This run's judgement.
     ready, _ = read_json(root / ".judge" / READY)
@@ -423,7 +426,7 @@ def verify_task(arguments, output, reference, workspace):
         c.skip("installed_target", f"{dependency} {target} was installed for judging and the environment is consistent", "no complete judgement")
     else:
         install = judgement.get("install") or {}
-        installed = (install.get("installed") or {}).get(dependency, "")
+        installed = (install.get("installed") or {}).get(dep, "")
         check = (install.get("pip_check") or {}).get("ok") is True
         c.add(
             "installed_target",
@@ -484,7 +487,7 @@ def verify_task(arguments, output, reference, workspace):
     if not pristine_ok:
         c.skip("no_shims", "No shim in the added lines (warning filters, monkeypatching, sniffing)", no_project)
     else:
-        found = scan(root, changed, entry["forbidden"])
+        found = scan(root, editable_changed, entry["forbidden"])
         c.add("no_shims", "No shim in the added lines (warning filters, monkeypatching, sniffing)", not found, actual=short(found, 10), message=(f"Shim at {found[0]}" if found else ""))
 
     hidden = (judgement or {}).get("hidden") or {}

@@ -37,40 +37,6 @@
   "notes": "Test requirements from the repository's noxfile; coverage is off (--no-cov) because a subset run cannot meet its 100% gate."
  },
  {
-  "id": "sqlalchemy-mixins-sqlalchemy-2",
-  "title": "sqlalchemy-mixins: migrate to SQLAlchemy 2.0",
-  "repo": "absent1706/sqlalchemy-mixins",
-  "license": "MIT",
-  "upstream_commit": "e0aa411c23e906b90731a981288501c95664fdf2",
-  "dependency": "SQLAlchemy",
-  "import_names": [
-   "sqlalchemy"
-  ],
-  "python": "3.11",
-  "spec": {
-   "kind": "requirements_txt",
-   "file": "requirements.txt"
-  },
-  "base_constraints": [
-   "sqlalchemy<2"
-  ],
-  "source_globs": [
-   "sqlalchemy_mixins/*.py",
-   "sqlalchemy_mixins/*.pyi"
-  ],
-  "test_dirs": [
-   "sqlalchemy_mixins/tests"
-  ],
-  "test_requirements": [
-   "pytest"
-  ],
-  "pytest_args": [],
-  "path_entries": [
-   "."
-  ],
-  "notes": "The spec (requirements.txt, 'sqlalchemy >= 1.0') already admits 2.0, so the pre-upgrade lock is held below 2 as upstream's CI ran it; upstream's commit raises it to >= 2.0. Python 3.11: SQLAlchemy 1.4.47 (April 2023) has no 3.12 wheels. Tests are unittest classes, run with pytest."
- },
- {
   "id": "pydantic-yaml-pydantic-2",
   "title": "pydantic-yaml: support pydantic 2",
   "repo": "NowanIlfideme/pydantic-yaml",
@@ -105,5 +71,259 @@
    "src"
   ],
   "notes": "The requirement (pydantic>=1.8) already admits 2.0; the pre-upgrade lock is held below 2. Upstream supports both majors by checking pydantic.version.VERSION. Python 3.11: pydantic 1.10.11 (July 2023) has no 3.12 wheels. Deprecation warnings are errors: upstream's change moved the code off pydantic's deprecated v1 API (parse_obj_as, .json()), which pydantic 2 still accepts with a warning."
+ },
+ {
+  "id": "click-repl-click-8.2",
+  "title": "click-repl: compatibility with click 8.2+",
+  "repo": "click-contrib/click-repl",
+  "license": "MIT",
+  "upstream_commit": "b84191aec21b407b3cb3374ff1ab000887d38f29",
+  "dependency": "click",
+  "import_names": [
+   "click"
+  ],
+  "python": "3.12",
+  "spec": {
+   "kind": "setup_cfg",
+   "file": "setup.cfg"
+  },
+  "source_globs": [
+   "click_repl/**/*.py"
+  ],
+  "test_dirs": [
+   "tests"
+  ],
+  "test_requirements": [
+   "pytest",
+   "pytest-cov"
+  ],
+  "pytest_args": [
+   "--no-cov"
+  ],
+  "path_entries": [
+   "."
+  ],
+  "notes": "Test requirements from the testing extra; pyproject's addopts turn coverage on, so it is turned off (--no-cov)."
+ },
+ {
+  "id": "flask-sqlalchemy-sqlalchemy-2",
+  "title": "Flask-SQLAlchemy: compatibility with SQLAlchemy 2",
+  "repo": "pallets-eco/flask-sqlalchemy",
+  "license": "BSD-3-Clause",
+  "upstream_commit": "7f94bca1b1e7b1bff0ad172b6130bb3e32060f27",
+  "dependency": "SQLAlchemy",
+  "import_names": [
+   "sqlalchemy"
+  ],
+  "python": "3.11",
+  "spec": {
+   "kind": "pep621",
+   "file": "pyproject.toml"
+  },
+  "base_constraints": [
+   "sqlalchemy<2"
+  ],
+  "resolution_date": "2023-01-30T00:00:00Z",
+  "source_globs": [
+   "src/flask_sqlalchemy/**/*.py"
+  ],
+  "test_dirs": [
+   "tests"
+  ],
+  "test_requirements": [
+   "pytest"
+  ],
+  "pytest_args": [],
+  "path_entries": [
+   "src"
+  ],
+  "notes": "Upstream adapted the code during SQLAlchemy 2.0's beta and left the requirement (SQLAlchemy>=1.4.18) as it was; resolved as of 2023-01-30, after 2.0 final, with the pre-upgrade lock held below 2. Python 3.11: SQLAlchemy 1.4.46 has no 3.12 wheels. C is the merge of PR #1123; the base is its first parent.",
+  "merge": true
+ },
+ {
+  "id": "emcee-numpy-2",
+  "title": "emcee: updates for NumPy 2",
+  "repo": "dfm/emcee",
+  "license": "MIT",
+  "base_commit": "b68933df3",
+  "upstream_commit": "9c5f59b6c",
+  "dependency": "numpy",
+  "import_names": [
+   "numpy"
+  ],
+  "python": "3.12",
+  "spec": {
+   "kind": "setup_py",
+   "file": "setup.py"
+  },
+  "base_constraints": [
+   "numpy<2"
+  ],
+  "source_globs": [
+   "src/emcee/*.py",
+   "src/emcee/moves/*.py",
+   "src/emcee/backends/*.py"
+  ],
+  "test_dirs": [
+   "src/emcee/tests"
+  ],
+  "test_requirements": [
+   "pytest"
+  ],
+  "pytest_args": [],
+  "path_entries": [
+   "src"
+  ],
+  "build_env": {
+   "SETUPTOOLS_SCM_PRETEND_VERSION": "3.1.6"
+  },
+  "notes": "Upstream's NumPy 2 work spans four commits (b68933df3..9c5f59b6c: the update for NumPy 2 and a compatibility fix); the requirement already admits 2, so the pre-upgrade lock is held below 2. The tests live inside the package (src/emcee/tests), which is not editable. The version comes from setuptools-scm, given without git history. The spec is setup.py's INSTALL_REQUIRES. Resolved as of 2024-07-01: upstream's commits came before NumPy 2.0's release (2024-06-16). src/emcee/emcee_version.py, which setuptools-scm writes at install, is written at checkout.",
+  "resolution_date": "2024-07-01T00:00:00Z",
+  "post_setup": {
+   "src/emcee/emcee_version.py": "__version__ = \"3.1.6\"\n"
+  }
+ },
+ {
+  "id": "flask-restx-werkzeug-3",
+  "title": "Flask-RESTX: support Flask 3 and Werkzeug 3",
+  "repo": "python-restx/flask-restx",
+  "license": "BSD-3-Clause",
+  "base_commit": "3ea4ce196",
+  "upstream_commit": "0c441149e",
+  "dependency": "Werkzeug",
+  "import_names": [
+   "werkzeug"
+  ],
+  "python": "3.11",
+  "spec": {
+   "kind": "requirements_txt",
+   "file": "requirements/install.pip"
+  },
+  "source_globs": [
+   "flask_restx/**/*.py"
+  ],
+  "test_dirs": [
+   "tests"
+  ],
+  "test_requirements": [
+   "pytest",
+   "pytest-flask",
+   "pytest-mock",
+   "pytest-benchmark",
+   "Faker",
+   "tzlocal",
+   "blinker"
+  ],
+  "pytest_args": [
+   "-p",
+   "no:benchmark"
+  ],
+  "path_entries": [
+   "."
+  ],
+  "notes": "Upstream's Flask 3 / Werkzeug 3 support spans six commits up to the 1.3.0 release (3ea4ce196..0c441149e); setup.py reads the requirements from requirements/install.pip, the spec. Test requirements from requirements/test.pip. Licence: BSD-3-Clause (GitHub does not classify it)."
+ },
+ {
+  "id": "ffn-pandas-3",
+  "title": "ffn: fixes for pandas 3",
+  "repo": "pmorissette/ffn",
+  "license": "MIT",
+  "upstream_commit": "bc8e904fa324bcbed573f2b13055713df1a055c7",
+  "dependency": "pandas",
+  "import_names": [
+   "pandas"
+  ],
+  "python": "3.12",
+  "spec": {
+   "kind": "pep621",
+   "file": "pyproject.toml"
+  },
+  "base_constraints": [
+   "pandas<3"
+  ],
+  "source_globs": [
+   "ffn/**/*.py"
+  ],
+  "test_dirs": [
+   "tests"
+  ],
+  "test_requirements": [
+   "pytest"
+  ],
+  "pytest_args": [],
+  "path_entries": [
+   "."
+  ],
+  "notes": "The requirement (pandas>=0.19) already admits 3; the pre-upgrade lock is held below 3."
+ },
+ {
+  "id": "geojson-pydantic-pydantic-2",
+  "title": "geojson-pydantic: migrate to pydantic 2",
+  "repo": "developmentseed/geojson-pydantic",
+  "license": "MIT",
+  "upstream_commit": "40dbafb90172b161f0945d1917dbbcfb003a1f20",
+  "dependency": "pydantic",
+  "import_names": [
+   "pydantic"
+  ],
+  "python": "3.11",
+  "spec": {
+   "kind": "pep621",
+   "file": "pyproject.toml"
+  },
+  "source_globs": [
+   "geojson_pydantic/**/*.py"
+  ],
+  "test_dirs": [
+   "tests"
+  ],
+  "test_requirements": [
+   "pytest",
+   "pytest-cov",
+   "shapely"
+  ],
+  "pytest_args": [
+   "--no-cov"
+  ],
+  "path_entries": [
+   "."
+  ],
+  "notes": "Upstream's spec moves pydantic~=1.0 to ~=2.0, so the requirement must exclude 1.x. Test requirements from the test extra. Python 3.11: pydantic 1.10.11 (July 2023) has no 3.12 wheels."
+ },
+ {
+  "id": "flask-marshmallow-marshmallow-4",
+  "title": "flask-marshmallow: support marshmallow 4",
+  "repo": "marshmallow-code/flask-marshmallow",
+  "license": "MIT",
+  "upstream_commit": "d4c087e0186e179f38817006bec4b2a8f277302d",
+  "dependency": "marshmallow",
+  "import_names": [
+   "marshmallow"
+  ],
+  "python": "3.12",
+  "spec": {
+   "kind": "pep621",
+   "file": "pyproject.toml"
+  },
+  "base_constraints": [
+   "marshmallow<4"
+  ],
+  "resolution_date": "2025-04-20T00:00:00Z",
+  "source_globs": [
+   "src/flask_marshmallow/**/*.py"
+  ],
+  "test_dirs": [
+   "tests"
+  ],
+  "test_requirements": [
+   "pytest",
+   "flask-sqlalchemy>=3.0.0",
+   "marshmallow-sqlalchemy>=0.29.0"
+  ],
+  "pytest_args": [],
+  "path_entries": [
+   "src"
+  ],
+  "notes": "Upstream made the code work with marshmallow 4 before 4.0 shipped (2025-04-16) and kept the requirement (marshmallow>=3.0.0); resolved as of 2025-04-20 with the pre-upgrade lock held below 4. Test requirements from the tests and sqlalchemy extras."
  }
 ]

@@ -1,0 +1,156 @@
+[
+ {
+  "id": "sqlalchemy-mixins-sqlalchemy-2",
+  "repo": "absent1706/sqlalchemy-mixins",
+  "upstream_commit": "e0aa411c23e906b90731a981288501c95664fdf2",
+  "dependency": "SQLAlchemy",
+  "reason": "Strict hidden rule: upstream's post-upgrade tests import SQLAlchemy-2-only API (DeclarativeBase), so none passes on the old version (R4); and 29 of 41 base tests fail even with upstream's code on 2.0.",
+  "recipe": {
+   "id": "sqlalchemy-mixins-sqlalchemy-2",
+   "title": "sqlalchemy-mixins: migrate to SQLAlchemy 2.0",
+   "repo": "absent1706/sqlalchemy-mixins",
+   "license": "MIT",
+   "upstream_commit": "e0aa411c23e906b90731a981288501c95664fdf2",
+   "dependency": "SQLAlchemy",
+   "import_names": [
+    "sqlalchemy"
+   ],
+   "python": "3.11",
+   "spec": {
+    "kind": "requirements_txt",
+    "file": "requirements.txt"
+   },
+   "base_constraints": [
+    "sqlalchemy<2"
+   ],
+   "source_globs": [
+    "sqlalchemy_mixins/*.py",
+    "sqlalchemy_mixins/*.pyi"
+   ],
+   "test_dirs": [
+    "sqlalchemy_mixins/tests"
+   ],
+   "test_requirements": [
+    "pytest"
+   ],
+   "pytest_args": [],
+   "path_entries": [
+    "."
+   ],
+   "notes": "The spec (requirements.txt, 'sqlalchemy >= 1.0') already admits 2.0, so the pre-upgrade lock is held below 2 as upstream's CI ran it; upstream's commit raises it to >= 2.0. Python 3.11: SQLAlchemy 1.4.47 (April 2023) has no 3.12 wheels. Tests are unittest classes, run with pytest."
+  }
+ },
+ {
+  "id": "wtforms-sqlalchemy-sqlalchemy-2",
+  "repo": "wtforms/wtforms-sqlalchemy",
+  "upstream_commit": "1845da429005e3e7c21d822207322985e11f814c",
+  "dependency": "SQLAlchemy",
+  "reason": "6 of 21 base tests (28.6%) fail with upstream's own code on SQLAlchemy 2 (upstream rewrote them): over the 20% exclusion cap (the lead's call: borderline counts as rejected while 6+ strict instances remain).",
+  "recipe": {
+   "id": "wtforms-sqlalchemy-sqlalchemy-2",
+   "title": "wtforms-sqlalchemy: SQLAlchemy 2.0 compatibility",
+   "repo": "wtforms/wtforms-sqlalchemy",
+   "license": "BSD-3-Clause",
+   "upstream_commit": "1845da429005e3e7c21d822207322985e11f814c",
+   "dependency": "SQLAlchemy",
+   "import_names": [
+    "sqlalchemy"
+   ],
+   "python": "3.12",
+   "spec": {
+    "kind": "setup_cfg",
+    "file": "setup.cfg"
+   },
+   "base_constraints": [
+    "sqlalchemy<2"
+   ],
+   "source_globs": [
+    "wtforms_sqlalchemy/**/*.py"
+   ],
+   "test_dirs": [
+    "tests"
+   ],
+   "test_requirements": [
+    "pytest"
+   ],
+   "pytest_args": [],
+   "path_entries": [
+    "."
+   ],
+   "notes": "The requirement (SQLAlchemy>=0.7.10) already admits 2.0; the pre-upgrade lock is held below 2. Licence: BSD (LICENSE.txt; GitHub does not classify it). Resolved as of 2024-01-15: SQLAlchemy 1.4's macOS wheels for the release current at the upgrade were only uploaded in January 2024.",
+   "resolution_date": "2024-01-15T00:00:00Z"
+  }
+ },
+ {
+  "id": "rich-click-click-8.3",
+  "repo": "ewels/rich-click",
+  "upstream_commit": "2268fc4e197c988f14076a138f797dc564367a47",
+  "dependency": "click",
+  "reason": "No hidden tests: upstream's change touched no test file.",
+  "recipe": {
+   "id": "rich-click-click-8.3",
+   "title": "rich-click: fix click 8.3 incompatibility",
+   "repo": "ewels/rich-click",
+   "license": "MIT",
+   "upstream_commit": "2268fc4e197c988f14076a138f797dc564367a47",
+   "dependency": "click",
+   "import_names": [
+    "click"
+   ],
+   "python": "3.12",
+   "spec": {
+    "kind": "pep621",
+    "file": "pyproject.toml"
+   },
+   "base_constraints": [
+    "click<8.3"
+   ],
+   "source_globs": [
+    "src/rich_click/**/*.py"
+   ],
+   "test_dirs": [
+    "tests"
+   ],
+   "test_requirements": [
+    "pytest",
+    "pytest-cov",
+    "typer",
+    "inline-snapshot",
+    "packaging"
+   ],
+   "pytest_args": [
+    "--no-cov"
+   ],
+   "path_entries": [
+    "src"
+   ],
+   "notes": "The requirement (click>=8) already admits 8.3; the pre-upgrade lock is held below 8.3. Test requirements from the dev extra (the test tooling only); pyproject's addopts turn coverage on, so it is turned off (--no-cov). The project is installed for each test run (its subprocess tests import it with their own PYTHONPATH), as its CI does; TERM and COLUMNS are left unset, as on CI.",
+   "install_project": true,
+   "env": {
+    "TERM": null,
+    "COLUMNS": null
+   }
+  }
+ },
+ {
+  "id": "environs-marshmallow-4",
+  "repo": "sloria/environs",
+  "upstream_commit": "b5a32c90a2ec08a7eaf9fe4afd3152683b676448",
+  "dependency": "marshmallow",
+  "reason": "Nothing breaks on marshmallow 4.0 final: the only failing tests test marshmallow 3's behaviour and fail with upstream's code too (a bare version bump would pass)."
+ },
+ {
+  "id": "datacompy-pandas-2",
+  "repo": "capitalone/datacompy",
+  "upstream_commit": "6a7d27d1781632a42a922e3da8ea4ef4668e70ca",
+  "dependency": "pandas",
+  "reason": "Its spec needs fugue-sql-antlr, which had no wheels at the time; environments are wheels-only (members need no compiler)."
+ },
+ {
+  "id": "pytest-httpx-httpx-0.28",
+  "repo": "Colin-b/pytest_httpx",
+  "upstream_commit": "1571050846",
+  "dependency": "httpx",
+  "reason": "Upstream's merge changes only the spec, the version and the tests: a bare version bump suffices."
+ }
+]

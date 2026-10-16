@@ -326,3 +326,12 @@ def test_judge_output_must_agree_with_its_record(tmp_path: Path, demo: dict):
     assert verifier.verify_output("judge", given, made, str(tmp_path))["valid"] is True
     wrong = JudgeOutput(**{**made.__dict__, "changed_files": ["setup.py"]})
     assert verifier.verify_output("judge", given, wrong, str(tmp_path))["valid"] is False
+
+
+def test_a_capitalised_distribution_name_is_looked_up_canonically(tmp_path: Path, demo: dict):
+    demo["dependency"] = "HTTPX"
+    (catalog.DATA / "catalog.json").write_text(json.dumps({"version": 1, "instances": [demo]}))
+    catalog.load.cache_clear()
+    s.judged(upgraded(tmp_path, demo), demo)
+    result = verdict(tmp_path, demo, pin=s.pin(demo), submission=s.submission(dependency="HTTPX"))
+    assert result["valid"] is True, result["message"]

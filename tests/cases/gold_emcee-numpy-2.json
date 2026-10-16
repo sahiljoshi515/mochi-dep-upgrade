@@ -1,0 +1,79 @@
+{
+ "note": "Upstream's own change (https://github.com/dfm/emcee/commit/9c5f59b6ca2fce111cc7348bda415253e0e1c1b0) as exact replacements: valid on every check.",
+ "task": "upgrade-dependency",
+ "arguments": {
+  "instance": "emcee-numpy-2"
+ },
+ "steps": [
+  {
+   "tool": "start_upgrade",
+   "arguments": {
+    "instance": "emcee-numpy-2"
+   },
+   "save_as": "start"
+  },
+  {
+   "tool": "edit_file",
+   "arguments": {
+    "edits": [
+     {
+      "path": "dep-upgrade/emcee-numpy-2/src/emcee/ensemble.py",
+      "old": "    return [{key: xi[val] for key, val in key_map.items()} for xi in x]\n",
+      "new": "    return [{key: xi[val] for key, val in key_map.items()} for xi in x]\n\n\ndef _scalar(fx):\n    # Make sure a value is a true scalar\n    # 1.0, np.float64(1.0), np.array([1.0]), np.array(1.0)\n    if not np.isscalar(fx):\n        try:\n            fx = np.asarray(fx).item()\n        except (TypeError, ValueError) as e:\n            raise ValueError(\"log_prob_fn should return scalar\") from e\n        return float(fx)\n    else:\n        return float(fx)\n"
+     },
+     {
+      "path": "dep-upgrade/emcee-numpy-2/src/emcee/ensemble.py",
+      "old": "                            \"error\", np.VisibleDeprecationWarning\n",
+      "new": "                            \"error\", VisibleDeprecationWarning\n"
+     },
+     {
+      "path": "dep-upgrade/emcee-numpy-2/src/emcee/ensemble.py",
+      "old": "            log_prob = np.array([float(l) for l in results])\n",
+      "new": "            log_prob = np.array([_scalar(l) for l in results])\n"
+     },
+     {
+      "path": "dep-upgrade/emcee-numpy-2/src/emcee/ensemble.py",
+      "old": "            log_prob = np.array([float(l[0]) for l in results])\n            blob = [l[1:] for l in results]\n",
+      "new": "            # perhaps log_prob_fn returns blobs?\n\n            # deal with the blobs first\n            # if l does not have a len attribute (i.e. not a sequence, no blob)\n            # then a TypeError is raised. However, no error will be raised if\n            # l is a length-1 array, np.array([1.234]). In that case blob\n            # will become an empty list.\n            blob = [l[1:] for l in results if len(l) > 1]\n            if not len(blob):\n                raise IndexError\n            log_prob = np.array([_scalar(l[0]) for l in results])\n"
+     },
+     {
+      "path": "dep-upgrade/emcee-numpy-2/src/emcee/ensemble.py",
+      "old": "    from collections import Iterable\n\n",
+      "new": "    from collections import Iterable\n\ntry:\n    # Try to import from numpy.exceptions (available in NumPy 1.25 and later)\n    from numpy.exceptions import VisibleDeprecationWarning\nexcept ImportError:\n    # Fallback to the top-level numpy import (for older versions)\n    from numpy import VisibleDeprecationWarning\n\n"
+     }
+    ],
+    "then": "sync_and_test"
+   },
+   "save_as": "edited"
+  },
+  {
+   "tool": "judge",
+   "arguments": {
+    "instance": "emcee-numpy-2"
+   },
+   "save_as": "judged"
+  },
+  {
+   "tool": "submit",
+   "arguments": {
+    "instance": "emcee-numpy-2",
+    "dependency": "numpy",
+    "from_version": "1.26.4",
+    "to_version": "2.0.0",
+    "requirement": "numpy",
+    "changed_files": [
+     "src/emcee/ensemble.py"
+    ],
+    "migration": [
+     "Kept numpy's requirement (it already admits 2.0.0) and re-locked to 2.0.0",
+     "Migrated src/emcee/ensemble.py to the numpy 2.0.0 API"
+    ]
+   }
+  }
+ ],
+ "answer": "Upgraded, judged and submitted.",
+ "expect": {
+  "valid": true,
+  "score_min": 1.0
+ }
+}

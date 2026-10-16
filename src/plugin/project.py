@@ -195,6 +195,10 @@ def _fresh_checkout(root: Path, entry: dict) -> None:
     root.mkdir(parents=True)
     data = fetch.codeload(entry["repo"], entry["base"]["commit"])
     fetch.unpack(data, root, keep=counts)
+    # Files the project's own install would generate (e.g. a setuptools-scm version module).
+    for rel, text in entry.get("post_setup", {}).items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(text, encoding="utf-8")
     entries = tree_entries(root)
     if tree_hash(entries) != entry["base"]["tree_sha256"]:
         shutil.rmtree(root)

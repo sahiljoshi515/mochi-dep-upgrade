@@ -31,7 +31,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from plugin import envs, fetch
-from plugin.common import Budget, sha256_bytes
+from plugin.common import Budget, ToolError, sha256_bytes
 from plugin.spec import read as read_spec
 from plugin.testing import copy_tree, run_suite
 from verifier import catalog
@@ -98,11 +98,14 @@ def tarball(repo: str, commit: str, cache: Path) -> bytes:
     return data
 
 
-def checkout(data: bytes, dest: Path) -> dict[str, str]:
+def checkout(data: bytes, dest: Path, post_setup: dict[str, str] | None = None) -> dict[str, str]:
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
     fetch.unpack(data, dest, keep=counts)
+    for rel, text in (post_setup or {}).items():
+        (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+        (dest / rel).write_text(text, encoding="utf-8")
     return dict(tree_entries(dest))
 
 
@@ -141,14 +144,15 @@ def onboard(recipe: dict, work: Path) -> dict:
     scratch = folder / "scratch"
     scratch.mkdir(exist_ok=True)
     commit = gh_commit(recipe["repo"], recipe["upstream_commit"])
-    if len(commit["parents"]) != 1:
-        raise SystemExit(f"{recipe['id']}: C is a merge commit")
-    base_commit = commit["parents"][0]
+    if len(commit["parents"]) != 1 and not recipe.get("merge") and not recipe.get("base_commit"):
+        raise SystemExit(f"{recipe['id']}: C is a merge commit (set merge: true to take the PR it merges against its first parent)")
+    # An upgrade made over several commits: base_commit is the commit before the first of them.
+    base_commit = gh_commit(recipe["repo"], recipe["base_commit"])["sha"] if recipe.get("base_commit") else commit["parents"][0]
     log(f"[{recipe['id']}] C={commit['sha'][:12]} base={base_commit[:12]} date={commit['date']}")
     base_data = tarball(recipe["repo"], base_commit, work / "cache")
     c_data = tarball(recipe["repo"], commit["sha"], work / "cache")
     base_dir, c_dir = folder / "base", folder / "c"
-    base_files, c_files = checkout(base_data, base_dir), checkout(c_data, c_dir)
+    base_files, c_files = checkout(base_data, base_dir, recipe.get("post_setup")), checkout(c_data, c_dir, recipe.get("post_setup"))
     size = sum((base_dir / rel).stat().st_size for rel in base_files)
     if len(base_files) > MAX_FILES or size > MAX_BYTES:
         raise SystemExit(f"{recipe['id']}: {len(base_files)} files, {size} bytes: over the limits")
@@ -203,6 +207,9 @@ def onboard(recipe: dict, work: Path) -> dict:
         "pytest_args": recipe.get("pytest_args", []),
         "path_entries": recipe.get("path_entries", ["."]),
         "env": recipe.get("env", {}),
+        "install_project": bool(recipe.get("install_project", False)),
+        "build_env": recipe.get("build_env", {}),
+        "post_setup": recipe.get("post_setup", {}),
         "allowed_collateral": collateral,
         "allowed_new": allowed_new,
         "locks": {
@@ -250,7 +257,11 @@ def onboard(recipe: dict, work: Path) -> dict:
             tree = assemble(folder / "trees" / f"{cell}-{attempt}", base_dir, c_dir, base_files, c_files, src=src, tests=tests, recipe=entry)
             run = run_suite(tree, entry, envs_built[env_name], rundir=folder / "runs" / f"{cell}-{attempt}", targets=list(entry["test_dirs"]), timeout=600, isolate=True)
             if not run.report_read:
-                raise SystemExit(f"{recipe['id']}: {cell} produced no report: {run.tail[-8:]}")
+                if env_name == "new" and src == "base":
+                    # The old code does not even load on the new version: every test breaks.
+                    log(f"[{recipe['id']}] {cell}#{attempt}: no report (the suite does not load): {' | '.join(run.tail[-3:])[:300]}")
+                else:
+                    raise SystemExit(f"{recipe['id']}: {cell} produced no report: {run.tail[-8:]}")
             results[cell].append(run)
             outcomes = list(run.outcomes.values())
             log(f"[{recipe['id']}] {cell}#{attempt}: collected {len(run.collected)}, passed {outcomes.count('passed')}, failed {outcomes.count('failed')}, errors {outcomes.count('error')}, {run.seconds}s")
@@ -356,8 +367,8 @@ def main(argv: list[str]) -> int:
     for recipe_id in args.ids:
         try:
             entry = onboard(recipes[recipe_id], Path(args.work))
-        except SystemExit as reason:
-            log(f"REJECTED {reason}")
+        except (SystemExit, ToolError) as reason:
+            log(f"REJECTED {recipe_id}: {reason}")
             failures += 1
             continue
         if args.write:

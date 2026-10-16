@@ -25,11 +25,19 @@ def _real(kind: str, text: str) -> list[str]:
         found = []
         for node in ast.walk(ast.parse(text)):
             if isinstance(node, ast.keyword) and node.arg == "install_requires":
+                if isinstance(node.value, ast.Name):
+                    continue
                 if not isinstance(node.value, ast.List) or not all(isinstance(item, ast.Constant) and isinstance(item.value, str) for item in node.value.elts):
                     raise ValueError("install_requires is not a literal list of strings")
                 found.append([item.value for item in node.value.elts])
+        if not found:
+            for node in ast.parse(text).body:
+                if isinstance(node, ast.Assign) and any(isinstance(name, ast.Name) and name.id == "INSTALL_REQUIRES" for name in node.targets):
+                    if not isinstance(node.value, ast.List) or not all(isinstance(item, ast.Constant) and isinstance(item.value, str) for item in node.value.elts):
+                        raise ValueError("INSTALL_REQUIRES is not a literal list of strings")
+                    found.append([item.value for item in node.value.elts])
         if len(found) != 1:
-            raise ValueError(f"setup.py passes install_requires {len(found)} times")
+            raise ValueError(f"setup.py states install_requires {len(found)} times")
         return found[0]
     return read_spec(kind, text)[0]
 

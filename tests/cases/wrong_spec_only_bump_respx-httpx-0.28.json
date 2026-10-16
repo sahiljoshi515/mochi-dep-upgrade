@@ -54,6 +54,6 @@
  "answer": "Upgraded, judged and submitted.",
  "expect": {
   "valid": false,
-  "message_contains": "test(s) did not pass"
+  "message_contains": "public test(s)"
  }
 }

@@ -25,6 +25,13 @@ class Task(Enum):
 
 
 class InstanceId(Enum):
+    CLICK_REPL_CLICK_8_2 = "click-repl-click-8.2"
+    EMCEE_NUMPY_2 = "emcee-numpy-2"
+    FFN_PANDAS_3 = "ffn-pandas-3"
+    FLASK_MARSHMALLOW_MARSHMALLOW_4 = "flask-marshmallow-marshmallow-4"
+    FLASK_RESTX_WERKZEUG_3 = "flask-restx-werkzeug-3"
+    FLASK_SQLALCHEMY_SQLALCHEMY_2 = "flask-sqlalchemy-sqlalchemy-2"
+    GEOJSON_PYDANTIC_PYDANTIC_2 = "geojson-pydantic-pydantic-2"
     PYDANTIC_YAML_PYDANTIC_2 = "pydantic-yaml-pydantic-2"
     RESPX_HTTPX_0_28 = "respx-httpx-0.28"
 

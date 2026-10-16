@@ -10,13 +10,13 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from plugin.common import run, scrub
-from plugin.envs import env_for, venv_python
+from plugin.common import run, scrub, uv
+from plugin.envs import INDEX, env_for, venv_python
 from verifier.trees import SKIP
 
 RUNNER = Path(__file__).with_name("runners") / "pytest_json.py"
 PROXY_VARIABLES = frozenset({"https_proxy", "http_proxy", "all_proxy", "no_proxy"})
-NO_NETWORK = '(version 1)(allow default)(deny network-outbound)(allow network-outbound (remote unix-socket))(allow network-outbound (remote ip "localhost:*"))'
+NO_NETWORK = "(version 1)(allow default)(deny network*)"
 
 
 @dataclass
@@ -65,11 +65,29 @@ def run_suite(tree: Path, entry: dict, scratch: Path, *, rundir: Path, targets: 
         *targets,
     ]
     paths = [str(rundir)] + [str((tree / entry_path).resolve()) for entry_path in entry.get("path_entries", ["."])]
+    base_env = env_for(scratch)
+    if entry.get("install_project"):
+        # Some projects' tests need the project installed (its metadata, entry points, subprocesses
+        # with their own PYTHONPATH): install this tree as it stands, without its dependencies.
+        installed = run(
+            [uv(), "pip", "install", "--no-deps", "--reinstall", "--exclude-newer", entry["resolution_date"], "--index-url", INDEX, "--python", str(venv_python(scratch)), str(tree)],
+            cwd=tree,
+            env={**base_env, **entry.get("build_env", {})},
+            timeout=min(120.0, timeout),
+        )
+        if not installed.ok:
+            return TestRun(command="uv pip install --no-deps .", exit_status=installed.code, tail=scrub(installed.tail, tree, *hidden, env=scratch), seconds=installed.seconds, timed_out=installed.timed_out)
     # Tests never reach the network: no proxy (under a sandbox, direct connections are blocked too).
-    env = {key: value for key, value in env_for(scratch).items() if key.lower() not in PROXY_VARIABLES}
-    env.update({**entry.get("env", {}), "PYTHONPATH": os.pathsep.join(paths)})
+    env = {key: value for key, value in base_env.items() if key.lower() not in PROXY_VARIABLES}
+    for key, value in entry.get("env", {}).items():
+        if value is None:
+            env.pop(key, None)
+        else:
+            env[key] = value
+    env["PYTHONPATH"] = os.pathsep.join(paths)
     if isolate and shutil.which("sandbox-exec"):
-        # The oracle runs outside NanoAgent's sandbox: deny outbound connections but loopback, as the judge's runs see it.
+        # The oracle runs outside NanoAgent's sandbox, whose macOS profile lets tests open no socket at all (no DNS,
+        # no loopback server, no Unix socket): deny the same, so a test that needs one is never public.
         command = ["sandbox-exec", "-p", NO_NETWORK, *command]
     done = run(command, cwd=tree, env=env, timeout=timeout)
     result = TestRun(

@@ -15,6 +15,7 @@ KINDS = ("pep621", "setup_cfg", "setup_py", "requirements_txt")
 TABLE_HEADER = re.compile(r"^\s*\[\[?\s*([^\]]*?)\s*\]\]?\s*(?:#.*)?$", re.MULTILINE)
 DEPENDENCIES_KEY = re.compile(r"^[ \t]*dependencies[ \t]*=[ \t]*\[", re.MULTILINE)
 INSTALL_REQUIRES_PY = re.compile(r"\binstall_requires\s*=\s*\[")
+INSTALL_REQUIRES_VARIABLE = re.compile(r"^INSTALL_REQUIRES\s*=\s*\[", re.MULTILINE)
 CFG_SECTION = re.compile(r"^\[([^\]\n]+)\][ \t]*$", re.MULTILINE)
 CFG_INSTALL_REQUIRES = re.compile(r"^install_requires[ \t]*[=:][ \t]*(.*)$", re.MULTILINE)
 
@@ -123,8 +124,11 @@ def _pep621(text):
 
 def _setup_py(text):
     found = list(INSTALL_REQUIRES_PY.finditer(text))
+    if not found:
+        # The other common form: a module-level INSTALL_REQUIRES = [...] passed to setup().
+        found = list(INSTALL_REQUIRES_VARIABLE.finditer(text))
     if len(found) != 1:
-        raise ValueError(f"setup.py must state install_requires=[...] exactly once as a literal list (found {len(found)})")
+        raise ValueError(f"setup.py must state install_requires=[...] (or INSTALL_REQUIRES = [...]) exactly once as a literal list (found {len(found)})")
     opening = found[0].end() - 1
     closing = scan_array(text, opening)
     if closing is None:

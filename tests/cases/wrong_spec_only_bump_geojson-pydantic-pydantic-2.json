@@ -1,0 +1,61 @@
+{
+ "note": "Only the requirement is raised; the source is not migrated, so the repository's and upstream's tests fail.",
+ "task": "upgrade-dependency",
+ "arguments": {
+  "instance": "geojson-pydantic-pydantic-2"
+ },
+ "steps": [
+  {
+   "tool": "start_upgrade",
+   "arguments": {
+    "instance": "geojson-pydantic-pydantic-2"
+   },
+   "save_as": "start"
+  },
+  {
+   "tool": "edit_file",
+   "arguments": {
+    "edits": [
+     {
+      "path": "dep-upgrade/geojson-pydantic-pydantic-2/pyproject.toml",
+      "old": "pydantic~=1.0",
+      "new": "pydantic~=2.0"
+     }
+    ],
+    "then": "sync_and_test"
+   },
+   "save_as": "edited"
+  },
+  {
+   "tool": "judge",
+   "arguments": {
+    "instance": "geojson-pydantic-pydantic-2"
+   },
+   "save_as": "judged"
+  },
+  {
+   "tool": "submit",
+   "arguments": {
+    "instance": "geojson-pydantic-pydantic-2",
+    "dependency": "pydantic",
+    "from_version": "1.10.11",
+    "to_version": "2.0.2",
+    "requirement": "pydantic~=2.0",
+    "changed_files": [
+     "pyproject.toml"
+    ],
+    "migration": [
+     "Raised pydantic to admit 2.0.2 in pyproject.toml",
+     "Migrated geojson_pydantic/features.py to the pydantic 2.0.2 API",
+     "Migrated geojson_pydantic/geometries.py to the pydantic 2.0.2 API",
+     "Migrated geojson_pydantic/types.py to the pydantic 2.0.2 API"
+    ]
+   }
+  }
+ ],
+ "answer": "Upgraded, judged and submitted.",
+ "expect": {
+  "valid": false,
+  "message_contains": "public test(s)"
+ }
+}
