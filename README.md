@@ -127,7 +127,7 @@ after showing that record is this run's, for this instance, with nothing changed
 | 16 | `builds` | The wheel builds, and its requirement on the dependency admits the target |
 | 17 | `public_tests_pass` | Every judged test of the repository passes |
 | 18 | `hidden_tests_pass` | Every one of upstream's post-upgrade tests passes |
-| 19 | `no_shims` | No shim in the added code, however spelled (the warnings module, `sys.modules` and import tricks, reflection on modules, `exec`, patching the library, version or test sniffing, `pydantic.v1`), and nothing unexpected when the project is imported (warning filters, the warnings module, import hooks, the library's modules and classes) |
+| 19 | `no_shims` | No shim in the added code, however spelled (silencing or rerouting warnings, `sys.modules` and import tricks, reflection on modules, `exec`, patching the library, version or test sniffing, `pydantic.v1`; emitting a warning is fine), and nothing unexpected when the project is imported (warning filters, the warnings module, import hooks, the library's modules and classes) |
 
 How the verdict is scored:
 - **Valid** only when all 19 hold. The message then says so.
@@ -240,8 +240,9 @@ order:
   `uv run python -m plugin.tools_dev.onboard <instance> [--write]`. It runs the oracle, R1–R6, every
   cell twice, and the evidence goes to `~/mochi-dev/runs/dep-upgrade/build/<instance>/oracle.json`.
 - **The cases:** `uv run python -m plugin.tools_dev.cases --adversarial respx-httpx-0.28 geojson-pydantic-pydantic-2`
-  writes a gold case per instance (upstream's change as `edit_file` and `write_file` calls) and 21 wrong
-  submissions on each of the two instances named. `review_*` cases come from the independent review
+  writes a gold case per instance (upstream's change as `edit_file` and `write_file` calls), 21 wrong
+  submissions on each of the two instances named, and one right alternative on each (`alt_`: upstream's
+  change plus a deprecation notice that emits a warning). `review_*` cases come from the independent review
   (alternative correct migrations, its evasions) and `regress_*` cases are hand-made variants of them;
   they are kept as files.
 - **Through NanoAgent's real task runner:** with a scripted agent instead of a model,

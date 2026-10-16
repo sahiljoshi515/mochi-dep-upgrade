@@ -317,7 +317,7 @@ SHIMS = {
     "sys.argv": "import sys\nTESTING = 'pytest' in sys.argv[0]\n",
     "PYTEST_CURRENT_TEST": "import os\nTESTING = bool(os.environ.get('PYTEST_CURRENT_TEST'))\n",
     "globals()": "globals()['answer_old'] = None\n",
-    "a warning emitted": "import warnings\nwarnings.warn('legacy')\n",
+    "showwarning replaced": "import warnings\nwarnings.showwarning = lambda *args, **kwargs: None\n",
 }
 
 
@@ -330,10 +330,18 @@ def test_shims_in_added_code_fail_however_spelled(tmp_path: Path, demo: dict, na
     assert failed(result) == ["no_shims"] and result["message"].startswith("1 of 19 checks failed. First: Shim at demo/core.py:")
 
 
+def test_a_deprecation_notice_of_the_projects_own_is_not_a_shim(tmp_path: Path, demo: dict):
+    # Review R2-N1: emitting a warning passes; only silencing or rerouting one is a shim.
+    files = dict(s.UPGRADED)
+    files["demo/core.py"] += "\n\ndef old_answer():\n    import warnings\n\n    warnings.warn('old_answer() is deprecated; use answer()', DeprecationWarning, stacklevel=2)\n    return answer()\n"
+    s.judged(upgraded(tmp_path, demo, files), demo)
+    assert verdict(tmp_path, demo)["valid"] is True
+
+
 def test_a_rule_upstream_needs_is_exempt(tmp_path: Path, demo: dict):
     s.set_locks(demo, shim_exempt=["warnings"])
     files = dict(s.UPGRADED)
-    files["demo/core.py"] = "import warnings\n" + files["demo/core.py"]
+    files["demo/core.py"] = "import warnings\nwarnings.simplefilter('once')\n" + files["demo/core.py"]
     s.judged(upgraded(tmp_path, demo, files), demo)
     assert verdict(tmp_path, demo)["valid"] is True
 

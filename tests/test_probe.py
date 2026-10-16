@@ -45,10 +45,26 @@ def test_a_clean_project_has_no_findings(tmp_path: Path):
 
 
 @pytest.mark.parametrize(
+    "code",
+    [
+        "import warnings\nwarnings.warn('proj.old is deprecated', DeprecationWarning, stacklevel=2)\n",
+        "import warnings\nwarnings.warn('once only', UserWarning)\nwarnings.warn('once only', UserWarning)\n",
+        "import warnings\n\n\nclass LegacyWarning(DeprecationWarning):\n    pass\n\n\nwarnings.warn('legacy', LegacyWarning)\n",
+    ],
+)
+def test_emitting_a_warning_on_import_is_not_a_finding(tmp_path: Path, code: str):
+    # Review R2-N1: only what silences or reroutes warnings counts, at run time as in the code.
+    found = probe(tmp_path, {"proj/__init__.py": code})
+    assert found["findings"] == [], found["findings"]
+
+
+@pytest.mark.parametrize(
     ("code", "finding"),
     [
         (FILTER, "adds the warning filter ignore::builtins.Warning::0"),
         ("import warnings\nwarnings.showwarning = lambda *a, **k: None\n", "changes warnings.showwarning"),
+        ("import logging\nlogging.captureWarnings(True)\n", "changes warnings.showwarning"),
+        ("import warnings\nwarnings.simplefilter('default', DeprecationWarning)\n", "adds the warning filter default::builtins.DeprecationWarning::0"),
         ("import fakedep\n\n\ndef helper():\n    return 2\n\n\nfakedep.helper = helper\n", "replaces fakedep.helper"),
         ("import fakedep\n\n\nclass Legacy:\n    pass\n\n\nfakedep.LegacyClient = Legacy\n", "adds fakedep.LegacyClient"),
         ("import fakedep.core\n\n\ndef get(self):\n    return 'POST'\n\n\nfakedep.core.Client.get = get\n", "puts the project's function proj.get [project] into fakedep.core.Client.get"),

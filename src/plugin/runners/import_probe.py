@@ -11,6 +11,8 @@ of the dependency's modules or classes. ``reference`` is a fresh interpreter tha
 the project run loaded except the project's own, looks up the attributes the project run saw on the
 dependency's modules (so lazily created ones exist here too), records the same, and writes what
 differs: what importing the project did. Descriptions name modules and qualified names, never paths.
+Emitting a warning changes none of this; what silences or reroutes warnings (a filter, a replaced
+``showwarning``) does.
 """
 
 import builtins

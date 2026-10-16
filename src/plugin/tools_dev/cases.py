@@ -266,6 +266,29 @@ def adversarial(entry: dict, work: Path) -> dict[str, dict]:
         out["version_sniff"] = shim_row("The source reads the dependency's version from its metadata.", f"from importlib.metadata import version as _v\nNEW_API = _v('{dist}').split('.')[0] != '{entry['from_version'].split('.')[0]}'\n")
         # Spelled past any reading of the code: the judge's import probe catches what it does.
         out["probe_only_filter"] = shim_row("A warning filter the code hides from any reading; importing the project shows it.", PROBE_ONLY_FILTER, "Importing the project adds the warning filter ignore")
+        out["alt_deprecation_notice"] = case(
+            entry,
+            "Upstream's change plus a deprecation notice of the project's own (it emits a DeprecationWarning when called): emitting a warning is not a shim (review R2-N1).",
+            [
+                start_step(entry),
+                *change_steps(
+                    entry,
+                    edits
+                    + [
+                        {
+                            "path": first_source,
+                            "old": _first_line(work, entry, first_source),
+                            "new": "import warnings\n\n\ndef _deprecated_helper(*args, **kwargs):\n    \"\"\"Kept for callers of the old helper; use the new API instead.\"\"\"\n    warnings.warn(\"_deprecated_helper is deprecated; call the new API\", DeprecationWarning, stacklevel=2)\n\n\n"
+                            + _first_line(work, entry, first_source),
+                        }
+                    ],
+                    written,
+                ),
+                judge_step(entry),
+                submit(),
+            ],
+            {"valid": True, "score_min": 1.0, "message_contains": "All 19 checks hold"},
+        )
         out["edit_after_judge"] = case(
             entry,
             "A source file changes after the judge ran.",
@@ -374,6 +397,8 @@ def main(argv: list[str]) -> int:
             failed.append(f"{entry['id']}: {problem}")
             continue
         for name, data in cases.items():
+            if name.startswith("wrong_alt_"):
+                name = name[len("wrong_") :]  # a right alternative, not a wrong submission
             (out / f"{name}.json").write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
             written += 1
     print(f"wrote {written} cases to {out}" + (f"; FAILED: {failed}" if failed else ""))

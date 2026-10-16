@@ -7,7 +7,11 @@ aliases (``import warnings as w``, ``f = getattr(w, "simplefilter")``), strings 
 ``getattr``, ``vars``, ``__dict__``, ``sys.modules[...]``, ``import_module`` and ``__import__`` are
 followed when their names fold. Every statement on an added line is then checked against these rules:
 
-- ``warnings``: any use of the warnings module or its filter API, however it is reached.
+- ``warnings``: what silences or reroutes warnings, however it is reached: the filter API
+  (``filterwarnings``, ``simplefilter``, ``resetwarnings``, ``catch_warnings``), the filter list and
+  registries, ``logging.captureWarnings``, ``PYTHONWARNINGS``, and assigning (or ``setattr``-ing) any
+  attribute of the warnings module (``showwarning``, ``formatwarning``, ...). Emitting a warning
+  (``warnings.warn``, ``warn_explicit``, a deprecation notice) is not a shim.
 - ``import-system``: ``sys.modules``, ``sys.path``, ``sys.meta_path`` and import hooks, reloading,
   ``__import__``, ``import_module`` of a computed or guarded name.
 - ``reflection``: ``getattr``, ``setattr``, ``delattr``, ``vars`` or ``__dict__`` on a module;
@@ -27,6 +31,7 @@ does. The judge and the verifier both call :func:`scan`.
 """
 
 import difflib
+import itertools
 import json
 import re
 from pathlib import Path
@@ -38,10 +43,14 @@ MAX_FOUND = 30
 RULES = ("warnings", "import-system", "reflection", "dynamic-code", "patches-dependency", "version-sniff", "test-sniff", "old-api", "unreadable")
 # Copies of their old API that libraries ship alongside the new one: using them is not migrating.
 OLD_API = {"pydantic": ["pydantic.v1"]}
-# Name parts of the warnings machinery, wherever they appear in a resolved name or a string.
-WARNING_PARTS = frozenset({"warnings", "_warnings", "filterwarnings", "simplefilter", "catch_warnings", "resetwarnings", "showwarning", "formatwarning", "suppress_warnings", "PYTHONWARNINGS", "_filters_mutated", "__warningregistry__"})
+# Names that silence or reroute warnings, wherever they appear in a resolved name or a string.
+SILENCING = frozenset({"filterwarnings", "simplefilter", "resetwarnings", "catch_warnings", "suppress_warnings", "captureWarnings", "PYTHONWARNINGS", "__warningregistry__", "_filters_mutated", "_filters_mutated_lock_held", "_add_filter", "_processoptions", "_setoption", "warnoptions"})
+# The warnings module's own state: reaching it at all is the first step to changing it.
+WARNING_STATE = frozenset({"filters", "onceregistry", "_onceregistry", "_filters_version"})
+# The warnings module itself (assigning any of its attributes reroutes warnings).
+WARNING_MODULES = frozenset({"warnings", "_warnings"})
 # Attribute names of the filter API: flagged on any object, even one whose name does not resolve.
-WARNING_ATTRS = frozenset({"filterwarnings", "simplefilter", "catch_warnings", "resetwarnings", "suppress_warnings", "_filters_mutated", "__warningregistry__"})
+WARNING_ATTRS = frozenset({"filterwarnings", "simplefilter", "resetwarnings", "catch_warnings", "suppress_warnings", "captureWarnings", "__warningregistry__", "_filters_mutated"})
 IMPORT_SYSTEM = ("sys.modules", "sys.path", "sys.meta_path", "sys.path_hooks", "sys.path_importer_cache", "importlib.reload", "importlib.invalidate_caches", "importlib.util", "importlib.machinery", "importlib.abc", "imp", "builtins.__import__", "<builtin>.__import__", "<builtin>.reload")
 TEST_SNIFF = ("sys.argv", "sys.orig_argv", "sys._getframe", "pytest", "_pytest")
 DYNAMIC_CODE = frozenset({"<builtin>.exec", "<builtin>.eval", "<builtin>.compile", "builtins.exec", "builtins.eval", "builtins.compile"})
@@ -71,6 +80,8 @@ TOKEN = re.compile(
     re.VERBOSE,
 )
 ESCAPE = re.compile(r"\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|[0-7]{1,3}|[\s\S])")
+# In an f-string: an escaped brace, a field that is one string literal, or any other brace.
+FIELD = re.compile(r"""\{\{|\}\}|\{\s*('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")\s*\}|[{}]""")
 SIMPLE_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "0": "\0", "\\": "\\", "'": "'", '"': '"', "a": "\a", "b": "\b", "f": "\f", "v": "\v"}
 OPENING, CLOSING = frozenset("([{"), frozenset(")]}")
 
@@ -113,12 +124,17 @@ def starts(path, prefix):
     return path == prefix or path.startswith(prefix + ".")
 
 
+def is_warnings_module(path):
+    """Whether ``path`` names the warnings module (``warnings``, ``_warnings``, ``logging.warnings``)."""
+    return bool(path) and path.split(".")[-1] in WARNING_MODULES
+
+
 def path_rule(path, dependency, old_api):
     """The rule a resolved name alone breaks, or None."""
     if not path:
         return None
     parts = path.split(".")
-    if any(part in WARNING_PARTS for part in parts):
+    if any(part in SILENCING for part in parts) or any(part in WARNING_MODULES and following in WARNING_STATE for part, following in itertools.pairwise(parts)):
         return "warnings"
     if any(starts(path, prefix) for prefix in IMPORT_SYSTEM):
         return "import-system"
@@ -143,7 +159,7 @@ def string_rule(text):
     if not IDENTIFIER_PATH.fullmatch(text):
         return None
     parts = text.split(".")
-    if any(part in WARNING_PARTS for part in parts):
+    if any(part in SILENCING for part in parts):
         return "warnings"
     if text.startswith("PYTEST") or parts[0] in ("pytest", "_pytest"):
         return "test-sniff"
@@ -165,19 +181,10 @@ def rot13(text):
     return "".join(out)
 
 
-def literal(text):
-    """The value of one string token, or None for an f-string with fields or a bytes literal."""
-    match = re.match(r"([rRbBuUfF]*)('''|\"\"\"|'|\")", text)
-    prefix, quote = match.group(1).lower(), match.group(2)
-    body = text[len(match.group(1)) + len(quote) : len(text) - len(quote)]
-    if "b" in prefix or ("f" in prefix and ("{" in body.replace("{{", "").replace("}}", ""))):
-        return None
-    if "f" in prefix:
-        body = body.replace("{{", "{").replace("}}", "}")
-    if "r" in prefix:
-        return body
+def unescape(text):
+    """A non-raw literal's backslash escapes, decoded."""
 
-    def unescape(found):
+    def one(found):
         code = found.group(1)
         if code[0] in "xuU":
             return chr(int(code[1:], 16))
@@ -185,7 +192,36 @@ def literal(text):
             return chr(int(code, 8))
         return SIMPLE_ESCAPES.get(code, "\\" + code)
 
-    return ESCAPE.sub(unescape, body)
+    return ESCAPE.sub(one, text)
+
+
+def literal(text):
+    """The value of one string token, or None: a bytes literal, or an f-string with a field that is not
+    a plain string literal (no conversion, no format spec), has no string value here."""
+    match = re.match(r"([rRbBuUfF]*)('''|\"\"\"|'|\")", text)
+    prefix, quote = match.group(1).lower(), match.group(2)
+    body = text[len(match.group(1)) + len(quote) : len(text) - len(quote)]
+    if "b" in prefix:
+        return None
+    plain = (lambda piece: piece) if "r" in prefix else unescape
+    if "f" not in prefix:
+        return plain(body)
+    out, last = [], 0
+    for found in FIELD.finditer(body):
+        out.append(plain(body[last : found.start()]))
+        piece = found.group()
+        if piece in ("{{", "}}"):
+            out.append(piece[0])
+        elif found.group(1):
+            value = literal(found.group(1))
+            if value is None:
+                return None
+            out.append(value)
+        else:
+            return None
+        last = found.end()
+    out.append(plain(body[last:]))
+    return "".join(out)
 
 
 class Token:
@@ -296,6 +332,24 @@ class Reader:
                     path, end = self.resolve(tokens, 2)
                     if path and end == len(tokens):
                         self.bound[tokens[0].text] = path
+
+    def is_module(self, tokens):
+        """Whether the expression ``tokens`` is a module object: a name bound by import, a guarded
+        module, or what an import function or ``sys.modules[...]`` returns."""
+        if len(tokens) == 1 and tokens[0].text in self.modules:
+            return True
+        path, end = self.resolve(tokens, 0)
+        if end != len(tokens):
+            return False
+        if path in GUARDED_MODULES or path == "builtins":
+            return True
+        if tokens[-1].text in (")", "]"):
+            opening = next((position for position in range(len(tokens)) if tokens[position].text in ("(", "[") and closing(tokens, position) == len(tokens) - 1), None)
+            if opening:
+                before, after = self.resolve(tokens[:opening], 0)
+                if after == opening:
+                    return (tokens[opening].text == "(" and before in IMPORTERS) or (tokens[opening].text == "[" and before == "sys.modules")
+        return False
 
     def name(self, text):
         if text in self.bound:
@@ -473,16 +527,13 @@ def statement_problems(tokens, reader, added, dependency, old_api):
     # Names and what they reach.
     for index, token in enumerate(tokens):
         if token.kind != "name" or (index and tokens[index - 1].text == ".") or not on_added(token):
-            if token.kind == "name" and index and tokens[index - 1].text == "." and on_added(token) and token.text in WARNING_ATTRS:
-                flag("warnings", token, "." + token.text)
             continue
         steps = []
         reader.resolve(tokens, index, steps)
         for path, step in steps:
             rule = path_rule(path, dependency, old_api)
             if rule:
-                flag(rule, step, path)
-                break
+                flag(rule, token, path)
         head = reader.name(token.text)
         if index + 1 < len(tokens) and tokens[index + 1].text == "(":
             end = closing(tokens, index + 1)
@@ -490,19 +541,24 @@ def statement_problems(tokens, reader, added, dependency, old_api):
             kind = head.split(".")[-1] if head and head.startswith(("<builtin>.", "builtins.")) else ""
             if kind in REFLECTORS and arguments and arguments[0]:
                 target, target_end = reader.resolve(arguments[0], 0)
-                whole = target_end == len(arguments[0])
+                target = target if target_end == len(arguments[0]) else None
                 name = reader.fold(arguments[1]) if len(arguments) > 1 else None
-                if target and whole and name and path_rule(f"{target}.{name}", dependency, old_api):
-                    pass  # flagged through the steps above
-                elif kind in ("setattr", "delattr") and is_dependency(target):
+                if target and name:
+                    rule = path_rule(f"{target}.{name}", dependency, old_api)
+                    if rule:
+                        flag(rule, token, f"{target}.{name}")
+                if kind in ("setattr", "delattr") and is_dependency(target):
                     flag("patches-dependency", token, f"{kind}({target}, ...)")
-                elif kind != "hasattr" and whole and (len(arguments[0]) == 1 and arguments[0][0].text in reader.modules or target in GUARDED_MODULES or target == "builtins"):
+                if kind in ("setattr", "delattr") and is_warnings_module(target):
+                    flag("warnings", token, f"{kind}({target}, ...)")
+                if kind != "hasattr" and reader.is_module(arguments[0]):
                     flag("reflection", token, f"{kind}() on the module {target}")
                 elif kind in ("setattr", "delattr") and target and target.split(".")[0] in GUARDED_MODULES:
                     flag("reflection", token, f"{kind}({target}, ...)")
             elif head in ("<builtin>.globals", "builtins.globals"):
                 flag("reflection", token, "globals()")
-        # Every call along the chain: imports of a computed name, metadata lookups.
+        # Every call along the chain (imports of a computed name, metadata lookups), and every
+        # module's __dict__ it reaches.
         _, end = reader.resolve(tokens, index)
         position = index + 1
         while position < end:
@@ -512,10 +568,16 @@ def statement_problems(tokens, reader, added, dependency, old_api):
                     callee, _ = reader.resolve(tokens[:position], index)
                     call_problems(callee, [part for part in split_top(tokens[position + 1 : last], ",") if part], token, reader, flag, dependency, old_api)
                 position = last + 1
+            elif tokens[position].text == "." and position + 1 < end:
+                attribute = tokens[position + 1].text
+                if attribute in WARNING_ATTRS:
+                    flag("warnings", token, "." + attribute)
+                if attribute == "__dict__" and reader.is_module(tokens[index:position]):
+                    base, _ = reader.resolve(tokens[index:position], 0)
+                    flag("reflection", token, f"{base}.__dict__")
+                position += 2
             else:
                 position += 1
-        if token.text == "__dict__" or (index + 2 < len(tokens) and tokens[index + 1].text == "." and tokens[index + 2].text == "__dict__" and token.text in reader.modules):
-            flag("reflection", token, f"{token.text}.__dict__")
     # Strings, folded: each run from a literal (or chr/str) as far as a string expression goes.
     index = 0
     while index < len(tokens):
@@ -567,6 +629,8 @@ def statement_problems(tokens, reader, added, dependency, old_api):
             if base and end == len(target) - 2:
                 if is_dependency(base):
                     flag("patches-dependency", target[0], f"{base}.{target[-1].text} =")
+                elif is_warnings_module(base):
+                    flag("warnings", target[0], f"{base}.{target[-1].text} =")
                 else:
                     rule = path_rule(f"{base}.{target[-1].text}", dependency, old_api)
                     if rule:

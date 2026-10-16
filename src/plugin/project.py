@@ -123,8 +123,9 @@ def rules_for(entry: dict) -> list[str]:
             )
         ),
         (
-            "No shims: no warning filters or other use of the warnings module, no monkeypatching or re-adding the library's old API, no sys.modules or import tricks, "
-            "no version or test sniffing, however spelled; migrate the code to the new API. The judge reads the added code and also imports the project to see what it changes."
+            "No shims: nothing that silences or reroutes warnings (filters, catch_warnings, showwarning), no monkeypatching or re-adding the library's old API, no sys.modules or "
+            "import tricks, no version or test sniffing, however spelled; migrate the code to the new API (emitting a deprecation warning of your own is fine). "
+            "The judge reads the added code and also imports the project to see what it changes."
         ),
         (
             f"Judging runs the repository's own tests ({len(entry['public']['ids'])} judged, {len(entry['public']['excluded'])} excluded as failing for "

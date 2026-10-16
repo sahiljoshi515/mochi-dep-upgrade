@@ -23,6 +23,7 @@ from verifier.shims import (
     REFLECTORS,
     WARNING_ATTRS,
     added_with_numbers,
+    is_warnings_module,
     path_rule,
     pristine_bytes,
     python_lines,
@@ -133,11 +134,8 @@ class Reader:
             for value in node.values:
                 if isinstance(value, ast.Constant):
                     parts.append(str(value.value))
-                elif isinstance(value, ast.FormattedValue) and value.conversion == -1 and value.format_spec is None:
-                    folded = self.fold(value.value, depth + 1)
-                    if folded is None:
-                        return None
-                    parts.append(folded)
+                elif isinstance(value, ast.FormattedValue) and value.conversion == -1 and value.format_spec is None and isinstance(value.value, ast.Constant) and isinstance(value.value.value, str):
+                    parts.append(value.value.value)  # a field that is a string literal, as the token reader folds it
                 else:
                     return None
             return "".join(parts)
@@ -252,13 +250,16 @@ class Checker:
         func = reader.resolve(node.func)
         kind = func.rsplit(".", 1)[-1] if func and func.startswith(("<builtin>.", "builtins.")) else ""
         if kind in REFLECTORS and node.args:
+            # Every rule that applies, as the token reader names them.
             target = reader.resolve(node.args[0])
             name = reader.fold(node.args[1]) if len(node.args) > 1 else None
-            if target and name and self.check_path(f"{target}.{name}", node):
-                return
+            if target and name:
+                self.check_path(f"{target}.{name}", node)
             if kind in ("setattr", "delattr") and self.is_dependency(target):
                 self.flag("patches-dependency", node, f"{kind}({target}, ...)")
-            elif kind != "hasattr" and reader.is_module(node.args[0], target):
+            if kind in ("setattr", "delattr") and is_warnings_module(target):
+                self.flag("warnings", node, f"{kind}({target}, ...)")
+            if kind != "hasattr" and reader.is_module(node.args[0], target):
                 self.flag("reflection", node, f"{kind}() on the module {target}")
             elif kind in ("setattr", "delattr") and target and target.split(".")[0] in GUARDED_MODULES:
                 self.flag("reflection", node, f"{kind}({target}, ...)")
@@ -295,6 +296,8 @@ class Checker:
             base = self.reader.resolve(target.value)
             if self.is_dependency(base):
                 self.flag("patches-dependency", target, f"{base}.{target.attr} =")
+            elif is_warnings_module(base):
+                self.flag("warnings", target, f"{base}.{target.attr} =")
             elif base:
                 self.check_path(f"{base}.{target.attr}", target)
         elif isinstance(target, ast.Subscript):
@@ -303,6 +306,7 @@ class Checker:
                 self.flag("patches-dependency", target, f"{base}[...] =")
             elif base:
                 self.check_path(base, target)
+            self.check_path(self.reader.resolve(target), target)  # what is written: sys.modules["pydantic.v1"]
 
     def run(self, tree: ast.AST) -> list[tuple[int, str, str]]:
         reader = self.reader
@@ -316,12 +320,13 @@ class Checker:
                         if alias.name != "*" and self.check_path(f"{node.module}.{alias.name}", node):
                             break
             elif isinstance(node, (ast.Name, ast.Attribute)) and isinstance(node.ctx, ast.Load) and self.on_added(node):
-                path = reader.resolve(node)
-                if not self.check_path(path, node) and isinstance(node, ast.Attribute):
-                    if node.attr in WARNING_ATTRS:
-                        self.flag("warnings", node, "." + node.attr)
-                    elif node.attr == "__dict__" and reader.is_module(node.value, reader.resolve(node.value)):
-                        self.flag("reflection", node, f"{reader.resolve(node.value)}.__dict__")
+                self.check_path(reader.resolve(node), node)
+                if isinstance(node, ast.Attribute) and node.attr in WARNING_ATTRS:
+                    self.flag("warnings", node, "." + node.attr)
+                if isinstance(node, ast.Attribute) and node.attr == "__dict__" and reader.is_module(node.value, reader.resolve(node.value)):
+                    self.flag("reflection", node, f"{reader.resolve(node.value)}.__dict__")
+            elif isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load) and self.on_added(node):
+                self.check_path(reader.resolve(node), node)
             elif isinstance(node, ast.Call) and self.on_added(node.func):
                 self.check_call(node)
             if isinstance(node, (ast.Assign, ast.Delete)):
