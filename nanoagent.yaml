@@ -1,7 +1,7 @@
 _ > nanoagent.plugin.manifest.ManifestConfig:
 id: dep-upgrade
 name: Dependency Upgrade
-version: 0.2.0
+version: 0.2.1
 status: ready
 nanoagent: ~=0.5.0
 

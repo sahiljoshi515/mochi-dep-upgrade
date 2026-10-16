@@ -80,6 +80,12 @@ class Breaking(Output):
 
 
 @dataclass
+class ExcludedTest(Output):
+    test: Annotated[str, "A public test, as pytest names it"]
+    reason: Annotated[str, "Why it is not judged: it fails for reasons of its own, or it behaves differently on another platform"]
+
+
+@dataclass
 class StartOutput(Output):
     root: Annotated[str, "The project's folder in the workspace: dep-upgrade/<instance>"]
     complete: Annotated[bool, COMPLETE]
@@ -93,7 +99,7 @@ class StartOutput(Output):
     editable: Annotated[list[str], "What may change, as globs relative to root: the spec file and the package's source"]
     uses: Annotated[list[str], "Where the source imports the dependency, as path:line, at most 20"]
     breaking: Annotated[list[Breaking], "Public tests that fail on the new version before any code change, at most 10"]
-    excluded_tests: Annotated[list[str], "Public tests that are not judged (they fail for reasons of their own), at most 20"]
+    excluded_tests: Annotated[list[ExcludedTest], "Public tests that are not judged, each with why (platform-dependent ones first), at most 20"]
     python: Annotated[str, "The Python version the project runs on"]
     fit: Annotated[str, "hosted when set-up and judging measured short enough for a hosted run, else local"]
     fit_note: Annotated[str, "What the fit means for this run"]

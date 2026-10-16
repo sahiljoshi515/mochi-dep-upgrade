@@ -16,7 +16,7 @@ from pathlib import Path
 
 from slimconfig import build_output, plain_output
 
-from contract import Breaking, PinOutput, PypiFile, StartOutput, UpgradeInput
+from contract import Breaking, ExcludedTest, PinOutput, PypiFile, StartOutput, UpgradeInput
 from plugin import envs, fetch
 from plugin.common import (
     JUDGE_DIR,
@@ -128,8 +128,10 @@ def rules_for(entry: dict) -> list[str]:
             "The judge reads the added code and also imports the project to see what it changes."
         ),
         (
-            f"Judging runs the repository's own tests ({len(entry['public']['ids'])} judged, {len(entry['public']['excluded'])} excluded as failing for "
-            "reasons of their own) and hidden tests: upstream's own tests after its upgrade. It also re-locks, installs and builds the wheel."
+            f"Judging runs the repository's own tests ({len(entry['public']['ids'])} judged; {len(entry['public']['excluded'])} not judged, each with why in "
+            "excluded_tests) and hidden tests: upstream's own tests after its upgrade"
+            + (f" ({len(entry['hidden']['excluded'])} of them not judged: they behave differently on another platform)" if entry["hidden"].get("excluded") else "")
+            + ". It also re-locks, installs and builds the wheel."
         ),
         "edit_file (exact old -> new replacements) with then: sync_and_test shows what is left; call judge after your last change, then submit in the same step.",
     ]
@@ -160,6 +162,11 @@ def fit_note(entry: dict) -> str:
     return f"Local runner only{measured}: set-up and judging take longer than a hosted run allows; run it where tool calls may take minutes."
 
 
+def excluded_first(entry: dict) -> list[dict]:
+    """The public tests not judged, those that behave differently on another platform first."""
+    return sorted(entry["public"]["excluded"], key=lambda item: not item["reason"].startswith("platform-dependent"))
+
+
 def _start_output(root: Path, entry: dict, *, complete: bool, next_step: str, current: str) -> StartOutput:
     spec_file = entry["spec"]["file"]
     requirements, _ = read_spec(entry["spec"]["kind"], (root / spec_file).read_text(encoding="utf-8"), name=spec_file)
@@ -176,7 +183,7 @@ def _start_output(root: Path, entry: dict, *, complete: bool, next_step: str, cu
         editable=editable_globs(entry),
         uses=uses_of(root, entry),
         breaking=[Breaking(test=item["test"], error=item["error"]) for item in entry.get("breaking", [])[:MAX_BREAKING]],
-        excluded_tests=[item["id"] for item in entry["public"]["excluded"]][:MAX_EXCLUDED],
+        excluded_tests=[ExcludedTest(test=item["id"], reason=item["reason"]) for item in excluded_first(entry)][:MAX_EXCLUDED],
         python=entry["python"],
         fit=entry.get("fit", "local"),
         fit_note=fit_note(entry),

@@ -66,6 +66,7 @@
    },
    "hidden": {
     "commit": "b84191aec21b407b3cb3374ff1ab000887d38f29",
+    "excluded": [],
     "files": {
      "tests/test_basic.py": "b17c8e4934b71bbdf1f45a121a7c9442550236a6ede62fbdcde925f3b310c578",
      "tests/test_command_collection.py": "c7dbf3f9460a076baa4083ff24616c9da505f7ee5039bd27c27a9e9f3f7c9083",
@@ -276,8 +277,10 @@
    "validated": {
     "at": "2026-10-16T04:19:04Z",
     "platforms": [
+     "linux-x86_64",
      "macos-arm64"
-    ]
+    ],
+    "platforms_at": "2026-10-16T18:01:48Z"
    }
   },
   {
@@ -350,6 +353,7 @@
    },
    "hidden": {
     "commit": "9c5f59b6ca2fce111cc7348bda415253e0e1c1b0",
+    "excluded": [],
     "files": {
      "src/emcee/tests/unit/test_ensemble.py": "a3ea9e1314c8ca8e6b063068e649839d219a3748e8e4845a9bf295682fed46fc"
     },
@@ -395,6 +399,10 @@
    "probe_expected": [],
    "public": {
     "excluded": [
+     {
+      "id": "src/emcee/tests/unit/test_sampler.py::test_walkers_independent_randn_offset_longdouble[40-15-450359962737049.6]",
+      "reason": "platform-dependent: not collected on linux-x86_64"
+     },
      {
       "id": "src/emcee/tests/integration/test_kde.py::test_normal_kde",
       "reason": "does not pass before the upgrade (skipped)"
@@ -512,7 +520,6 @@
      "src/emcee/tests/unit/test_sampler.py::test_walkers_independent_randn_offset_longdouble[10-2-100000.0]",
      "src/emcee/tests/unit/test_sampler.py::test_walkers_independent_randn_offset_longdouble[20-5-10000000000.0]",
      "src/emcee/tests/unit/test_sampler.py::test_walkers_independent_randn_offset_longdouble[30-10-100000000000000.0]",
-     "src/emcee/tests/unit/test_sampler.py::test_walkers_independent_randn_offset_longdouble[40-15-450359962737049.6]",
      "src/emcee/tests/unit/test_sampler.py::test_walkers_independent_scaled",
      "src/emcee/tests/unit/test_state.py::test_back_compat",
      "src/emcee/tests/unit/test_state.py::test_indexing",
@@ -748,8 +755,10 @@
    "validated": {
     "at": "2026-10-16T04:24:21Z",
     "platforms": [
+     "linux-x86_64",
      "macos-arm64"
-    ]
+    ],
+    "platforms_at": "2026-10-16T18:01:48Z"
    }
   },
   {
@@ -792,6 +801,7 @@
    },
    "hidden": {
     "commit": "bc8e904fa324bcbed573f2b13055713df1a055c7",
+    "excluded": [],
     "files": {
      "tests/test_core.py": "0ad7d964a8f189d8ff5beb6963cb76115cb57d050fe99c7c53eb25fe9b6f0068"
     },
@@ -1207,8 +1217,10 @@
    "validated": {
     "at": "2026-10-16T04:25:37Z",
     "platforms": [
+     "linux-x86_64",
      "macos-arm64"
-    ]
+    ],
+    "platforms_at": "2026-10-16T18:01:48Z"
    }
   },
   {
@@ -1283,6 +1295,7 @@
    },
    "hidden": {
     "commit": "d4c087e0186e179f38817006bec4b2a8f277302d",
+    "excluded": [],
     "files": {
      "tests/conftest.py": "7106f78a0824376e269c4da547bc1c5686b960d351ae1e7219899ffa82d09d8b",
      "tests/test_sqla.py": "aeb983ab756999c59ec55204ad065b21b3db4c9d717981f9967cef3fcb214138"
@@ -1451,8 +1464,10 @@
    "validated": {
     "at": "2026-10-16T04:25:58Z",
     "platforms": [
+     "linux-x86_64",
      "macos-arm64"
-    ]
+    ],
+    "platforms_at": "2026-10-16T18:01:48Z"
    }
   },
   {
@@ -1533,6 +1548,7 @@
    },
    "hidden": {
     "commit": "0c441149ee7de5f04710d24bdc252acb46fdbe37",
+    "excluded": [],
     "files": {
      "tests/test_errors.py": "d6530eba604e6850e5d27001d8a54b46f9e75b2f831f992964530f1a3994cc4c",
      "tests/test_utils.py": "9ab98623846a3414e87ce98dd17b050443338cfae725e7739533406994a2b41f"
@@ -2946,8 +2962,10 @@
    "validated": {
     "at": "2026-10-16T04:52:35Z",
     "platforms": [
+     "linux-x86_64",
      "macos-arm64"
-    ]
+    ],
+    "platforms_at": "2026-10-16T18:01:48Z"
    }
   },
   {
@@ -3020,6 +3038,7 @@
    },
    "hidden": {
     "commit": "7f94bca1b1e7b1bff0ad172b6130bb3e32060f27",
+    "excluded": [],
     "files": {
      "tests/test_engine.py": "27751e1f8b3b9df2accc41817426e4575ed1027cc0d56968eec84c7844881640",
      "tests/test_legacy_query.py": "fa7c1ae5789508d3d10653756591ef3e075ad5a3c8be0dbcec6121e19dae90b6",
@@ -3456,8 +3475,10 @@
    "validated": {
     "at": "2026-10-16T04:19:20Z",
     "platforms": [
+     "linux-x86_64",
      "macos-arm64"
-    ]
+    ],
+    "platforms_at": "2026-10-16T18:01:48Z"
    }
   },
   {
@@ -3534,6 +3555,7 @@
    },
    "hidden": {
     "commit": "40dbafb90172b161f0945d1917dbbcfb003a1f20",
+    "excluded": [],
     "files": {
      "tests/test_geometries.py": "b965aa655c5546da8b9e1667c9f49fa97731600ef8e059eab75872349f6a7e3e"
     },
@@ -3884,8 +3906,10 @@
    "validated": {
     "at": "2026-10-16T04:25:48Z",
     "platforms": [
+     "linux-x86_64",
      "macos-arm64"
-    ]
+    ],
+    "platforms_at": "2026-10-16T18:01:48Z"
    }
   },
   {
@@ -3966,6 +3990,7 @@
    },
    "hidden": {
     "commit": "c3ad43ea76294a27da61dc88e418e8785dfdad53",
+    "excluded": [],
     "files": {
      "src/test/test_basic.py": "3a66847dbe0f227a11337a3b516af0780ded55fbaacc6eac00e8b39e55b4ad70",
      "src/test/test_readme.py": "9ff0372c605a0355f20a7ebf8230d4f66dd9724ada61a033b700241e4d5d9b0d"
@@ -4116,8 +4141,10 @@
    "validated": {
     "at": "2026-10-16T04:18:55Z",
     "platforms": [
+     "linux-x86_64",
      "macos-arm64"
-    ]
+    ],
+    "platforms_at": "2026-10-16T18:01:48Z"
    }
   },
   {
@@ -4189,6 +4216,7 @@
    },
    "hidden": {
     "commit": "179c65131b16e895e9da0e2d629aab3db6a97694",
+    "excluded": [],
     "files": {
      "tests/test_api.py": "85ea9f419ea605183ccaf182e0c39e0a2934d297f94c2a5c1d9f9db692c05f8b",
      "tests/test_mock.py": "f6d09bf734ed9e8aca2df7db819db2d44559f46fb4600ecb27b6efc27cc2c99d"
@@ -4759,8 +4787,10 @@
    "validated": {
     "at": "2026-10-16T04:18:46Z",
     "platforms": [
+     "linux-x86_64",
      "macos-arm64"
-    ]
+    ],
+    "platforms_at": "2026-10-16T18:01:48Z"
    }
   }
  ],

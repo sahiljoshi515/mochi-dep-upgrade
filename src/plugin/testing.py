@@ -91,10 +91,14 @@ def run_suite(tree: Path, entry: dict, scratch: Path, *, rundir: Path, targets: 
         if not installed.ok:
             return TestRun(command="uv pip install --no-deps .", exit_status=installed.code, tail=scrub(installed.tail, tree, *hidden, env=scratch), seconds=installed.seconds, timed_out=installed.timed_out)
     env = suite_env(tree, entry, scratch, first=[str(rundir)])
-    if isolate and shutil.which("sandbox-exec"):
-        # The oracle runs outside NanoAgent's sandbox, whose macOS profile lets tests open no socket at all (no DNS,
-        # no loopback server, no Unix socket): deny the same, so a test that needs one is never public.
-        command = ["sandbox-exec", "-p", NO_NETWORK, *command]
+    if isolate:
+        # The oracle runs outside NanoAgent's sandbox. Its macOS profile lets tests open no socket at all (no DNS,
+        # no loopback server, no Unix socket), its Linux one gives them a network of their own with loopback only:
+        # cut the same off here, so a test that needs more is never judged.
+        if shutil.which("sandbox-exec"):
+            command = ["sandbox-exec", "-p", NO_NETWORK, *command]
+        elif shutil.which("bwrap"):
+            command = ["bwrap", "--dev-bind", "/", "/", "--unshare-net", "--die-with-parent", "--", *command]
     done = run(command, cwd=tree, env=env, timeout=timeout)
     result = TestRun(
         command="pytest " + " ".join([*flags, *targets]),

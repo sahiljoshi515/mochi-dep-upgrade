@@ -26,7 +26,8 @@ A deterministic verifier (no model) checks 19 constraints and says which failed 
   - the dependency, its current and target versions, the spec file and its requirement;
   - the editable globs and where the source imports the dependency;
   - the public tests that break on the new version, with their first error;
-  - the tests that are not judged;
+  - the tests that are not judged, each with why (those that behave differently on another platform
+    first);
   - whether the instance fits a hosted run;
   - the rules.
 - `list_files`, `read_file`, `search`: bounded reads of the workspace, never inside `.judge/`.
@@ -90,7 +91,7 @@ Every instance is a real upstream change, validated by the build-time oracle bel
 | Instance | Repository (licence) | Upgrade | Judged tests: public / hidden | Upstream's change | Fit |
 |---|---|---|---|---|---|
 | `click-repl-click-8.2` | [click-contrib/click-repl](https://github.com/click-contrib/click-repl) (MIT) | click 8.1.8 → 8.3.1 (Python 3.12) | 59 (9 excluded) / 11 | [b84191aec2](https://github.com/click-contrib/click-repl/commit/b84191aec21b407b3cb3374ff1ab000887d38f29): 3 files, +25 lines | hosted |
-| `emcee-numpy-2` | [dfm/emcee](https://github.com/dfm/emcee) (MIT) | numpy 1.26.4 → 2.0.0 (Python 3.12) | 85 (9 excluded) / 8 | [9c5f59b6ca](https://github.com/dfm/emcee/commit/9c5f59b6ca2fce111cc7348bda415253e0e1c1b0): 1 file, +33 lines | local |
+| `emcee-numpy-2` | [dfm/emcee](https://github.com/dfm/emcee) (MIT) | numpy 1.26.4 → 2.0.0 (Python 3.12) | 84 (10 excluded) / 8 | [9c5f59b6ca](https://github.com/dfm/emcee/commit/9c5f59b6ca2fce111cc7348bda415253e0e1c1b0): 1 file, +33 lines | local |
 | `ffn-pandas-3` | [pmorissette/ffn](https://github.com/pmorissette/ffn) (MIT) | pandas 2.3.3 → 3.0.1 (Python 3.12) | 50 (1 excluded) / 44 | [bc8e904fa3](https://github.com/pmorissette/ffn/commit/bc8e904fa324bcbed573f2b13055713df1a055c7): 1 file, +9 lines | local |
 | `flask-marshmallow-marshmallow-4` | [marshmallow-code/flask-marshmallow](https://github.com/marshmallow-code/flask-marshmallow) (MIT) | marshmallow 3.26.1 → 4.0.0 (Python 3.12) | 44 (5 excluded) / 8 | [d4c087e018](https://github.com/marshmallow-code/flask-marshmallow/commit/d4c087e0186e179f38817006bec4b2a8f277302d): 5 files, +34 lines | hosted |
 | `flask-restx-werkzeug-3` | [python-restx/flask-restx](https://github.com/python-restx/flask-restx) (BSD-3-Clause) | Werkzeug 2.3.8 → 3.0.1 (Python 3.11) | 1223 (9 excluded) / 47 | [0c441149ee](https://github.com/python-restx/flask-restx/commit/0c441149ee7de5f04710d24bdc252acb46fdbe37): 4 files, +88 lines | hosted |
@@ -149,6 +150,13 @@ From those runs:
   to upstream's own renames fail R4 and drop out. At least one is required.
 - **Breakage.** Some public test must fail in R2, or some hidden test in R6, so a bare version bump
   cannot pass.
+- **Platforms.** A test's id or outcome can depend on the platform, so the cells that define the judged
+  sets (R1 and R3, R4 and R5) run again, twice each, on every platform measured (`python -m
+  plugin.tools_dev.platforms`): macOS arm64 and Linux x86-64. Only tests that hold on all of them are
+  judged; the others are excluded with the platform and the reason, and `start_upgrade` lists them first.
+  One test differs today: emcee's `test_walkers_independent_randn_offset_longdouble[40-15-450359962737049.6]`
+  is not collected on Linux x86-64, where `np.longdouble` is 80-bit and pytest names the same case
+  `[40-15-offset3]`.
 - **Limits** come from upstream's own change (its source changes, and its spec's requirements).
 - **Shim rules** that upstream's own change breaks are exempt for the instance (`shim_exempt`:
   flask-restx's `warnings.simplefilter` and `importlib.metadata.version`, pydantic-yaml's
@@ -229,9 +237,11 @@ How it is scored:
   `getattr`, `vars`, `__dict__` and computed imports are followed. Code can still hide a name from any
   reading (built from bytes, say); the import probe then shows what the project's import did, but only
   at import time: a shim that acts later, inside a function, is left to the hidden tests.
-- **Validated platforms.** Instances are validated on macOS (Apple silicon) only. The locks are
-  universal and `data/pythons.json` pins Linux x86-64 interpreters, but no instance has been run on
-  Linux yet; wheels-only locks may not install on other platforms.
+- **Validated platforms.** Instances are validated on macOS (Apple silicon, NanoAgent's seatbelt
+  sandbox) and Linux x86-64 (Ubuntu 24.04 in Docker on Apple silicon, under emulation, NanoAgent's
+  bubblewrap sandbox). Linux arm64 and Windows are not measured: the locks are universal, but
+  wheels-only locks may not install there, and a test that behaves differently there would fail even
+  upstream's own change.
 
 ## Layout
 
@@ -310,5 +320,9 @@ Rebuilding what the cases and the catalog come from:
   `~/mochi-dev/runs/dep-upgrade/build/<instance>/oracle.json`.
 - **The cases:** `uv run python -m plugin.tools_dev.cases --adversarial respx-httpx-0.28 geojson-pydantic-pydantic-2`
   writes the gold, wrong and alt cases from the oracle's checkouts.
+- **The platforms:** `uv run python -m plugin.tools_dev.platforms measure` on each platform (for Linux,
+  inside the image `~/mochi-dev/harness/linux/run_sample.sh` builds) writes how every judged test fares
+  there; `uv run python -m plugin.tools_dev.platforms apply <measurement.json> ...` keeps in the judged
+  sets what holds on all of them.
 - **The fit tags:** `uv run python -m plugin.tools_dev.fit <out-root>/timings.json --load <load average>`
   from the gold cases run one at a time, then `uv run python -m plugin.tools_dev.readme` for the tables.
