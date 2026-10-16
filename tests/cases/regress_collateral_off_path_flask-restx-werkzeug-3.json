@@ -1,5 +1,5 @@
 {
- "note": "Review F1's other side: Flask is an allowed collateral package, but capped below its pre-upgrade version it locks at 2.3.2, which neither the pre-upgrade lock nor upstream's has: lock_scope says so first.",
+ "note": "Review F1's other side: Flask is an allowed collateral package, but capped below its pre-upgrade version it locks at 2.3.2, which neither the pre-upgrade lock nor upstream's has: lock-scope says so first.",
  "task": "upgrade-dependency",
  "arguments": {
   "instance": "flask-restx-werkzeug-3"
@@ -138,6 +138,6 @@
  "expect": {
   "valid": false,
   "score_max": 0.99,
-  "message_contains": "flask is locked at 2.3.2; it may stay at 2.3.3 or move to 3.0.0"
+  "message_contains": "lock-scope: The judged lock goes beyond the upgrade: flask is locked at 2.3.2; it may stay at 2.3.3 or move to 3.0.0"
  }
 }

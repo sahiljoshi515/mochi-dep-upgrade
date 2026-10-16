@@ -7,6 +7,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -18,25 +19,25 @@ from verifier import catalog
 from verifier.changing import editable_problem
 
 ORDER = [
-    "instance_pinned",
-    "submitted_facts",
-    "migration_notes",
+    "instance-pinned",
+    "submitted-facts",
+    "migration-notes",
     "judged",
-    "judged_this_run",
-    "judgement_consistent",
-    "files_as_judged",
-    "submission_matches",
-    "allowed_files_only",
-    "within_limits",
-    "spec_scope",
-    "spec_admits_target",
-    "lock_target",
-    "lock_scope",
-    "installed_target",
+    "judged-this-run",
+    "judgement-consistent",
+    "files-as-judged",
+    "submission-matches",
+    "allowed-files-only",
+    "within-limits",
+    "spec-scope",
+    "spec-admits-target",
+    "lock-target",
+    "lock-scope",
+    "installed-target",
     "builds",
-    "public_tests_pass",
-    "hidden_tests_pass",
-    "no_shims",
+    "public-tests-pass",
+    "hidden-tests-pass",
+    "no-shims",
 ]
 
 
@@ -79,25 +80,25 @@ def judged_wrongly(tmp_path, demo, **override):
 
 
 CASES = {
-    "instance_pinned": lambda t, d: verdict(t, d, pin=dataclasses.replace(s.pin(d), pypi_yanked=True)),
-    "submitted_facts": lambda t, d: verdict(t, d, submission=s.submission(to_version="0.28.0")),
-    "migration_notes": lambda t, d: verdict(t, d, submission=s.submission(migration=["too short"])),
-    "judgement_consistent": lambda t, d: verdict(t, d) if judged_wrongly(t, d, catalog_sha256="0" * 64) else None,
-    "public_tests_pass": lambda t, d: verdict(t, d) if judged_wrongly(t, d, public={"ran": True, "ok": False, "ids_sha256": catalog.ids_sha256(d["public"]["ids"]), "passed": 0, "failed": ["tests/test_core.py::test_answer"], "failed_count": 1, "missing": [], "missing_count": 0}) else None,
-    "hidden_tests_pass": lambda t, d: verdict(t, d) if judged_wrongly(t, d, hidden={"ran": True, "ok": True, "ids_sha256": "0" * 64, "passed": 1, "failed": [], "failed_count": 0, "missing": [], "missing_count": 0, "files_digest": catalog.hidden_digest(d["hidden"]["files"])}) else None,
-    "installed_target": lambda t, d: verdict(t, d) if judged_wrongly(t, d, install={"ok": True, "installed": {"httpx": "0.27.2"}, "pip_check": {"ok": True}}) else None,
+    "instance-pinned": lambda t, d: verdict(t, d, pin=dataclasses.replace(s.pin(d), pypi_yanked=True)),
+    "submitted-facts": lambda t, d: verdict(t, d, submission=s.submission(to_version="0.28.0")),
+    "migration-notes": lambda t, d: verdict(t, d, submission=s.submission(migration=["too short"])),
+    "judgement-consistent": lambda t, d: verdict(t, d) if judged_wrongly(t, d, catalog_sha256="0" * 64) else None,
+    "public-tests-pass": lambda t, d: verdict(t, d) if judged_wrongly(t, d, public={"ran": True, "ok": False, "ids_sha256": catalog.ids_sha256(d["public"]["ids"]), "passed": 0, "failed": ["tests/test_core.py::test_answer"], "failed_count": 1, "missing": [], "missing_count": 0}) else None,
+    "hidden-tests-pass": lambda t, d: verdict(t, d) if judged_wrongly(t, d, hidden={"ran": True, "ok": True, "ids_sha256": "0" * 64, "passed": 1, "failed": [], "failed_count": 0, "missing": [], "missing_count": 0, "files_digest": catalog.hidden_digest(d["hidden"]["files"])}) else None,
+    "installed-target": lambda t, d: verdict(t, d) if judged_wrongly(t, d, install={"ok": True, "installed": {"httpx": "0.27.2"}, "pip_check": {"ok": True}}) else None,
     "builds": lambda t, d: verdict(t, d) if judged_wrongly(t, d, build={"ok": True, "wheel": "demo.whl", "requires_dist": ["httpx<0.28", "six"]}) else None,
 }
 
 
 @pytest.mark.parametrize("constraint", sorted(CASES))
 def test_each_judgement_or_submission_fault_fails_exactly_its_constraint(tmp_path: Path, demo: dict, constraint: str):
-    if constraint in ("instance_pinned", "submitted_facts", "migration_notes"):
+    if constraint in ("instance-pinned", "submitted-facts", "migration-notes"):
         s.judged(upgraded(tmp_path, demo), demo)
     result = CASES[constraint](tmp_path, demo)
     assert failed(result) == [constraint]
     assert result["valid"] is False and result["score"] < 1.0
-    assert result["message"].startswith("1 of 19 checks failed. First: ")
+    assert result["message"].startswith(f"{constraint}: ") and "(+" not in result["message"]
 
 
 def test_no_judgement_leaves_what_needs_one_unchecked(tmp_path: Path, demo: dict):
@@ -105,9 +106,9 @@ def test_no_judgement_leaves_what_needs_one_unchecked(tmp_path: Path, demo: dict
     result = verdict(tmp_path, demo)
     checks = by_id(result)
     assert checks["judged"]["ok"] is False and "No judgement" in result["message"]
-    for cid in ("judged_this_run", "judgement_consistent", "files_as_judged", "lock_target", "lock_scope", "installed_target", "builds", "public_tests_pass", "hidden_tests_pass"):
-        assert checks[cid]["ok"] is None and checks[cid]["message"].startswith("not checked")
-    for cid in ("submission_matches", "allowed_files_only", "within_limits", "spec_scope", "spec_admits_target", "no_shims"):
+    for cid in ("judged-this-run", "judgement-consistent", "files-as-judged", "lock-target", "lock-scope", "installed-target", "builds", "public-tests-pass", "hidden-tests-pass"):
+        assert checks[cid]["ok"] is None and checks[cid]["message"] == "Not checked: judged did not hold."
+    for cid in ("submission-matches", "allowed-files-only", "within-limits", "spec-scope", "spec-admits-target", "no-shims"):
         assert checks[cid]["ok"] is True, cid
     assert result["score"] < 1.0
 
@@ -122,39 +123,39 @@ def test_an_earlier_runs_judgement_does_not_count(tmp_path: Path, demo: dict):
     root = judged_wrongly(tmp_path, demo)
     prior = hashlib.sha256((root / ".judge" / "judgement.json").read_bytes()).hexdigest()
     result = verdict(tmp_path, demo, pin=s.pin(demo, prior=prior))
-    assert failed(result) == ["judged_this_run"] and "from an earlier run" in result["message"]
+    assert failed(result) == ["judged-this-run"] and "from an earlier run" in result["message"]
 
 
 def test_a_judgement_from_another_set_up_does_not_count(tmp_path: Path, demo: dict):
     judged_wrongly(tmp_path, demo, setup_token="forged")
     result = verdict(tmp_path, demo)
-    assert failed(result) == ["judged_this_run"] and "does not belong to this set-up" in result["message"]
+    assert failed(result) == ["judged-this-run"] and "does not belong to this set-up" in result["message"]
 
 
 def test_a_change_after_judging_is_caught(tmp_path: Path, demo: dict):
     root = judged_wrongly(tmp_path, demo)
     (root / "demo" / "core.py").write_text((root / "demo" / "core.py").read_text() + "# later\n")
     result = verdict(tmp_path, demo)
-    assert "files_as_judged" in failed(result)
-    assert by_id(result)["files_as_judged"]["message"] == "demo/core.py changed after the judge ran"
+    assert "files-as-judged" in failed(result)
+    assert by_id(result)["files-as-judged"]["message"] == "demo/core.py changed after the judge ran: call judge again after your last change"
 
 
 def test_an_unstable_judgement_is_caught(tmp_path: Path, demo: dict):
     judged_wrongly(tmp_path, demo, tree_stable=False)
-    assert failed(verdict(tmp_path, demo)) == ["files_as_judged"]
+    assert failed(verdict(tmp_path, demo)) == ["files-as-judged"]
 
 
 def test_the_submission_must_list_exactly_the_changed_files(tmp_path: Path, demo: dict):
     judged_wrongly(tmp_path, demo)
     result = verdict(tmp_path, demo, submission=s.submission(changed_files=["demo/core.py"]))
-    assert failed(result) == ["submission_matches"] and "leaves out changed files: setup.py" in result["message"]
+    assert failed(result) == ["submission-matches"] and "leaves out changed files: setup.py" in result["message"]
     result = verdict(tmp_path, demo, submission=s.submission(changed_files=["demo/core.py", "setup.py", "demo/__init__.py"]))
     assert "lists files that did not change: demo/__init__.py" in result["message"]
 
 
 def test_the_submission_must_state_the_specs_requirement(tmp_path: Path, demo: dict):
     judged_wrongly(tmp_path, demo)
-    assert failed(verdict(tmp_path, demo, submission=s.submission(requirement="httpx>=0.28"))) == ["submission_matches"]
+    assert failed(verdict(tmp_path, demo, submission=s.submission(requirement="httpx>=0.28"))) == ["submission-matches"]
     assert verdict(tmp_path, demo, submission=s.submission(requirement="HTTPX >= 0.25.0"))["valid"] is True
 
 
@@ -163,7 +164,7 @@ def test_tests_may_not_change(tmp_path: Path, demo: dict):
     (root / "tests" / "test_core.py").write_text("def test_answer():\n    assert True\n")
     s.judged(root, demo)
     result = verdict(tmp_path, demo, submission=s.submission(changed_files=["demo/core.py", "setup.py", "tests/test_core.py"]))
-    assert failed(result) == ["allowed_files_only"] and result["message"].endswith("tests/test_core.py may not change")
+    assert failed(result) == ["allowed-files-only"] and result["message"].endswith("tests/test_core.py may not change: only setup.py, demo/**/*.py may")
 
 
 def test_deleting_a_file_is_not_an_upgrade(tmp_path: Path, demo: dict):
@@ -171,7 +172,7 @@ def test_deleting_a_file_is_not_an_upgrade(tmp_path: Path, demo: dict):
     (root / "demo" / "__init__.py").unlink()
     s.judged(root, demo)
     result = verdict(tmp_path, demo, submission=s.submission(changed_files=["demo/__init__.py", "demo/core.py", "setup.py"]))
-    assert failed(result) == ["allowed_files_only"] and "demo/__init__.py was deleted" in result["message"]
+    assert failed(result) == ["allowed-files-only"] and "demo/__init__.py was deleted" in result["message"]
 
 
 def test_limits(tmp_path: Path, demo: dict):
@@ -179,7 +180,7 @@ def test_limits(tmp_path: Path, demo: dict):
     files["demo/core.py"] += "".join(f"VALUE_{n} = {n}\n" for n in range(200))
     s.judged(upgraded(tmp_path, demo, files), demo)
     result = verdict(tmp_path, demo)
-    assert failed(result) == ["within_limits"] and "added lines (at most 150)" in result["message"]
+    assert failed(result) == ["within-limits"] and "added lines (at most 150)" in result["message"]
 
 
 @pytest.mark.parametrize(
@@ -197,15 +198,15 @@ def test_the_spec_may_only_raise_the_dependency(tmp_path: Path, demo: dict, setu
     files["setup.py"] = s.FILES["setup.py"].replace('install_requires=["httpx>=0.25.0,<0.28.0", "six"]', setup_line)
     s.judged(upgraded(tmp_path, demo, files), demo)
     result = verdict(tmp_path, demo)
-    assert "spec_scope" in failed(result)
-    assert message in by_id(result)["spec_scope"]["message"]
+    assert "spec-scope" in failed(result)
+    assert message in by_id(result)["spec-scope"]["message"]
 
 
 def test_the_rest_of_the_spec_file_stays(tmp_path: Path, demo: dict):
     files = dict(s.UPGRADED)
     files["setup.py"] = files["setup.py"].replace('name="demo"', 'name="demo2"')
     s.judged(upgraded(tmp_path, demo, files), demo)
-    assert "the rest of the file changed too" in by_id(verdict(tmp_path, demo))["spec_scope"]["message"]
+    assert "the rest of the file changed too" in by_id(verdict(tmp_path, demo))["spec-scope"]["message"]
 
 
 def test_the_requirement_must_admit_the_target(tmp_path: Path, demo: dict):
@@ -213,7 +214,7 @@ def test_the_requirement_must_admit_the_target(tmp_path: Path, demo: dict):
     files["setup.py"] = s.FILES["setup.py"].replace('"httpx>=0.25.0,<0.28.0"', '"httpx>=0.25.0,<0.28.1"')
     s.judged(upgraded(tmp_path, demo, files), demo)
     result = verdict(tmp_path, demo, submission=s.submission(requirement="httpx>=0.25.0,<0.28.1"))
-    assert failed(result) == ["spec_admits_target"] and "does not admit 0.28.1" in result["message"]
+    assert failed(result) == ["spec-admits-target"] and "does not admit 0.28.1" in result["message"]
 
 
 def test_the_requirement_must_exclude_the_old_version_when_upstreams_did(tmp_path: Path, demo: dict):
@@ -222,7 +223,7 @@ def test_the_requirement_must_exclude_the_old_version_when_upstreams_did(tmp_pat
     catalog.load.cache_clear()
     s.judged(upgraded(tmp_path, demo), demo)
     result = verdict(tmp_path, demo)
-    assert failed(result) == ["spec_admits_target"] and "still admits 0.27.2" in result["message"]
+    assert failed(result) == ["spec-admits-target"] and "still admits 0.27.2" in result["message"]
 
 
 def test_the_lock_must_pin_the_target_with_pypis_hashes(tmp_path: Path, demo: dict):
@@ -233,27 +234,27 @@ def test_the_lock_must_pin_the_target_with_pypis_hashes(tmp_path: Path, demo: di
     judgement["lock"]["sha256"] = hashlib.sha256(text.encode()).hexdigest()
     (root / ".judge" / "judgement.json").write_text(json.dumps(judgement))
     result = verdict(tmp_path, demo)
-    assert "lock_target" in failed(result) and "The lock holds httpx 0.28.0, not 0.28.1" in result["message"]
+    assert "lock-target" in failed(result) and "The lock holds httpx 0.28.0, not 0.28.1" in result["message"]
 
 
 def test_hashes_that_are_not_pypis_fail(tmp_path: Path, demo: dict):
     judged_wrongly(tmp_path, demo)
     result = verdict(tmp_path, demo, pin=s.pin(demo, files=[("httpx-0.28.1-py3-none-any.whl", "e" * 64), ("httpx-0.28.1.tar.gz", "f" * 64)]))
-    assert {"instance_pinned", "lock_target"} <= set(failed(result))
+    assert {"instance-pinned", "lock-target"} <= set(failed(result))
 
 
 def test_a_lock_changed_after_judging_fails(tmp_path: Path, demo: dict):
     root = judged_wrongly(tmp_path, demo)
     (root / ".judge" / "requirements.lock").write_text(s.lock("0.27.2"))
     result = verdict(tmp_path, demo)
-    assert failed(result) == ["lock_target"] and "The lock changed after judging" in result["message"]
+    assert failed(result) == ["lock-target"] and "The lock changed after judging" in result["message"]
 
 
 def test_nothing_else_in_the_lock_may_move(tmp_path: Path, demo: dict):
     root = judged_wrongly(tmp_path, demo)
     s.judged_lock(root, s.lock(s.NEW).replace("anyio==4.7.0", "anyio==4.8.0"))
     result = verdict(tmp_path, demo)
-    assert failed(result) == ["lock_scope"]
+    assert failed(result) == ["lock-scope"]
     assert "anyio moved from 4.7.0 to 4.8.0; the upgrade keeps it at 4.7.0" in result["message"]
 
 
@@ -282,7 +283,7 @@ def test_collateral_may_stay_or_move_as_upstreams_did_and_nothing_else_moves(tmp
     if problem is None:
         assert result["valid"] is True, result["message"]
     else:
-        assert failed(result) == ["lock_scope"] and result["message"].endswith(problem)
+        assert failed(result) == ["lock-scope"] and result["message"].endswith(problem)
 
 
 def test_a_package_upstream_dropped_may_go_or_stay(tmp_path: Path, demo: dict):
@@ -327,7 +328,7 @@ def test_shims_in_added_code_fail_however_spelled(tmp_path: Path, demo: dict, na
     files["demo/core.py"] = files["demo/core.py"].replace("import httpx\n", "import httpx\n" + SHIMS[name], 1)
     s.judged(upgraded(tmp_path, demo, files), demo)
     result = verdict(tmp_path, demo)
-    assert failed(result) == ["no_shims"] and result["message"].startswith("1 of 19 checks failed. First: Shim at demo/core.py:")
+    assert failed(result) == ["no-shims"] and result["message"].startswith("no-shims: Shim at demo/core.py:")
 
 
 def test_a_deprecation_notice_of_the_projects_own_is_not_a_shim(tmp_path: Path, demo: dict):
@@ -359,7 +360,7 @@ def test_a_rule_upstream_needs_is_exempt(tmp_path: Path, demo: dict):
 def test_what_importing_the_project_does_is_checked(tmp_path: Path, demo: dict, probe, message: str):
     s.judged(upgraded(tmp_path, demo), demo, probe=probe)
     result = verdict(tmp_path, demo)
-    assert failed(result) == ["no_shims"] and message in result["message"]
+    assert failed(result) == ["no-shims"] and message in result["message"]
 
 
 def test_what_upstreams_tree_does_on_import_is_expected(tmp_path: Path, demo: dict):
@@ -378,13 +379,13 @@ def test_a_shim_already_in_the_pristine_code_is_not_the_agents(tmp_path: Path, d
     s.write_project(root, {"setup.py": s.UPGRADED["setup.py"]})
     s.judged(root, item)
     result = verdict(tmp_path / "ws", item, submission=s.submission(changed_files=["setup.py"]))
-    assert by_id(result)["no_shims"]["ok"] is True
+    assert by_id(result)["no-shims"]["ok"] is True
 
 
 def test_a_never_started_project_is_not_checked(tmp_path: Path, demo: dict):
     result = verdict(tmp_path, demo)
     checks = by_id(result)
-    assert checks["submission_matches"]["ok"] is None and "never set up" in checks["submission_matches"]["message"]
+    assert checks["submission-matches"]["ok"] is None and "never set up" in checks["submission-matches"]["message"]
     assert result["valid"] is False
 
 
@@ -394,7 +395,63 @@ def test_an_altered_pristine_record_is_not_trusted(tmp_path: Path, demo: dict):
     pristine["files"]["demo/core.py"] = "0" * 64
     (root / ".judge" / "pristine.json").write_text(json.dumps(pristine))
     checks = by_id(verdict(tmp_path, demo))
-    assert checks["allowed_files_only"]["ok"] is None and "altered" in checks["allowed_files_only"]["message"]
+    assert checks["allowed-files-only"]["ok"] is None and "altered" in checks["allowed-files-only"]["message"]
+
+
+ENTRY_KEYS = {"id", "constraint", "ok", "expected", "actual", "message"}
+
+
+def assert_plain_entries(result: dict) -> None:
+    """Every entry has the same keys; a failure says why, a skipped check names the earlier one it waited
+    on (or why there was nothing to check), and the verdict's message is the first failure's, then how many
+    more fail."""
+    entries = result["details"]["constraints"]
+    order = [entry["id"] for entry in entries]
+    for position, entry in enumerate(entries):
+        assert set(entry) == ENTRY_KEYS, entry
+        assert (entry["message"] == "") == (entry["ok"] is True), entry
+        if entry["ok"] is None:
+            assert entry["message"].startswith("Not checked: "), entry
+            if entry["message"].endswith(" did not hold."):
+                waited = entry["message"].removeprefix("Not checked: ").removesuffix(" did not hold.")
+                assert waited in order[:position] and entries[order.index(waited)]["ok"] is not True, entry
+    wrong = [entry for entry in entries if entry["ok"] is False]
+    if wrong:
+        more = f" (+{len(wrong) - 1} more)" if len(wrong) > 1 else ""
+        assert result["message"] == f"{wrong[0]['id']}: {wrong[0]['message'].removesuffix('.')}{more}"
+
+
+@pytest.mark.parametrize("fault", ["none", "no judgement", "never started", "unstable", "tests edited", *sorted(CASES)])
+def test_every_verdict_entry_has_the_same_keys_and_says_why(tmp_path: Path, demo: dict, fault: str):
+    if fault == "never started":
+        result = verdict(tmp_path, demo)
+    elif fault == "no judgement":
+        upgraded(tmp_path, demo)
+        result = verdict(tmp_path, demo)
+    elif fault in CASES:
+        if fault in ("instance-pinned", "submitted-facts", "migration-notes"):
+            s.judged(upgraded(tmp_path, demo), demo)
+        result = CASES[fault](tmp_path, demo)
+    else:
+        root = upgraded(tmp_path, demo)
+        if fault == "tests edited":
+            (root / "tests" / "test_core.py").write_text("def test_answer():\n    assert True\n")
+        s.judged(root, demo, **({"tree_stable": False} if fault == "unstable" else {}))
+        result = verdict(tmp_path, demo)
+    assert_plain_entries(result)
+    assert result["valid"] is (fault == "none")
+
+
+def test_a_lock_that_did_not_resolve_leaves_the_lock_scope_waiting_on_it(tmp_path: Path, demo: dict):
+    judged_wrongly(tmp_path, demo, lock={"ok": False, "tail": ["no solution found"]})
+    checks = by_id(verdict(tmp_path, demo))
+    assert checks["lock-target"]["ok"] is False and checks["lock-scope"]["message"] == "Not checked: lock-target did not hold."
+
+
+def test_the_readme_lists_the_constraints_in_the_verifiers_order() -> None:
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+    rows = re.findall(r"^\| (\d+) \| `([a-z-]+)` \| ", readme, re.MULTILINE)
+    assert [(int(number), name) for number, name in rows] == list(enumerate(ORDER, 1))
 
 
 def test_editable_paths(demo: dict):
@@ -450,6 +507,6 @@ def test_an_invalid_specifier_is_the_first_reason_given(tmp_path: Path, demo: di
     s.judged(root, demo, spec={"ok": False, "requirements": [], "requirement": "", "error": "setup.py: not valid"}, lock={"ok": False, "tail": ["setup.py: not valid"]})
     result = verdict(tmp_path, demo, submission=s.submission(requirement=setup_line.strip('"')))
     first = next(item for item in result["details"]["constraints"] if item["ok"] is False)
-    assert first["id"] == "submission_matches"
+    assert first["id"] == "submission-matches"
     assert ("~= needs at least two release segments" in first["message"]) or ("cannot take a local version" in first["message"])
-    assert by_id(result)["spec_admits_target"]["message"] == first["message"]
+    assert by_id(result)["spec-admits-target"]["message"] == first["message"]

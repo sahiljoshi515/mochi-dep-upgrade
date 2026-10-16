@@ -17,6 +17,10 @@ START, END = "<!-- instances -->", "<!-- /instances -->"
 REJECTED_START, REJECTED_END = "<!-- rejected -->", "<!-- /rejected -->"
 
 
+def files(count: int) -> str:
+    return f"{count} file" if count == 1 else f"{count} files"
+
+
 def table() -> str:
     rows = [
         "| Instance | Repository (licence) | Upgrade | Judged tests: public / hidden | Upstream's change | Fit |",
@@ -28,7 +32,7 @@ def table() -> str:
             f"| `{item['id']}` | [{item['repo']}](https://github.com/{item['repo']}) ({item['license']}) "
             f"| {item['dependency']} {item['from_version']} → {item['target_version']} (Python {item['python']}) "
             f"| {len(item['public']['ids'])} ({excluded} excluded) / {len(item['hidden']['ids'])} "
-            f"| [{item['upstream']['commit'][:10]}]({item['upstream']['url']}): {len(item['gold']['files'])} files, +{item['gold']['added_lines']} lines "
+            f"| [{item['upstream']['commit'][:10]}]({item['upstream']['url']}): {files(len(item['gold']['files']))}, +{item['gold']['added_lines']} lines "
             f"| {item.get('fit', 'local')} |"
         )
     return "\n".join(rows)

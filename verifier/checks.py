@@ -66,33 +66,47 @@ def short(values, most=10):
     return values if len(values) <= most else values[:most] + [f"... and {len(values) - most} more"]
 
 
+def compact(value, most=10):
+    """A value small enough for a verdict: lists cut to ``most`` items, mappings to ``most`` keys."""
+    if isinstance(value, list):
+        return short(value, most)
+    if isinstance(value, dict) and len(value) > most:
+        return {**dict(list(value.items())[:most]), "...": f"{len(value) - most} more"}
+    return value
+
+
 class Constraints:
-    """The ordered list of every constraint a verdict checks: each ``{id, constraint, ok, expected,
-    actual, message}``, where ``ok`` is True, False, or None for not checked (it depends on an
-    earlier constraint that failed)."""
+    """The ordered list of every constraint a verdict checks, each with the same keys: ``{id, constraint,
+    ok, expected, actual, message}``. ``ok`` is True (holds), False (fails) or None (not checked: what it
+    needs did not hold); ``expected`` and ``actual`` where they say something, else None; ``message`` why
+    it fails or what it waited on ("" when it holds)."""
 
     def __init__(self):
         self.items = []
 
     def add(self, cid, constraint, ok, *, expected=None, actual=None, message=""):
-        self.items.append({"id": cid, "constraint": constraint, "ok": ok, "expected": expected, "actual": actual, "message": message})
+        message = "" if ok is True else (message or constraint)
+        self.items.append({"id": cid, "constraint": constraint, "ok": ok, "expected": compact(expected), "actual": compact(actual), "message": message})
         return ok
 
-    def skip(self, cid, constraint, reason):
-        return self.add(cid, constraint, None, message=f"not checked: {reason}")
+    def skip(self, cid, constraint, waited):
+        """Not checked: ``waited`` is the earlier constraint that did not hold, or why there was nothing to check."""
+        known = any(item["id"] == waited for item in self.items)
+        return self.add(cid, constraint, None, message=f"Not checked: {waited} did not hold." if known else f"Not checked: {waited}.")
 
     def verdict(self, success, **details):
         """The verdict: valid when every constraint holds; the score is the share that held, at most
-        0.99 unless valid; the message names the first failure (or says all hold)."""
+        0.99 unless valid; the message names the first failing constraint, why, and how many more fail
+        (or says all hold)."""
         total = len(self.items)
         held = sum(1 for item in self.items if item["ok"] is True)
         valid = held == total
-        failed = [item for item in self.items if item["ok"] is not True]
         if valid:
             message = f"All {total} checks hold: {success}"
             score = 1.0
         else:
-            first = next((item for item in failed if item["ok"] is False), failed[0])
-            message = f"{len(failed)} of {total} checks failed. First: {first['message'] or first['constraint']}"
+            wrong = [item for item in self.items if item["ok"] is False]
+            first = wrong[0] if wrong else next(item for item in self.items if item["ok"] is not True)
+            message = f"{first['id']}: {first['message'].removesuffix('.')}" + (f" (+{len(wrong) - 1} more)" if len(wrong) > 1 else "")
             score = min(0.99, round(held / total, 4))
         return result(valid, message, score=score, constraints=self.items, **details)

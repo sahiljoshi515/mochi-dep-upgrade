@@ -90,6 +90,6 @@
  "expect": {
   "valid": false,
   "score_max": 0.99,
-  "message_contains": "public test(s) did not pass"
+  "message_contains": "public-tests-pass: 4 public tests did not pass"
  }
 }

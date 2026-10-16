@@ -194,6 +194,6 @@
  "answer": "Upgraded, judged and submitted.",
  "expect": {
   "valid": false,
-  "message_contains": "tests/test_geometries.py may not change"
+  "message_contains": "allowed-files-only: tests/test_geometries.py may not change"
  }
 }

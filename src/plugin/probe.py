@@ -3,7 +3,7 @@ module, the import hooks and the dependency's modules and classes, measured agai
 that loads the same third-party modules without the project (``runners/import_probe.py`` does both
 runs). Reading the code (``verifier.shims``) cannot follow every spelling of a shim; running the import
 shows its effect. What upstream's own tree does on import (ffn attaches its functions to pandas, for
-one) is the instance's ``probe_expected``; anything else is a finding, and the verifier fails no_shims
+one) is the instance's ``probe_expected``; anything else is a finding, and the verifier fails no-shims
 on it.
 """
 

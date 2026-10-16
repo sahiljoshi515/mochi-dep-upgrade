@@ -186,7 +186,7 @@ def change_steps(entry: dict, edits: list[dict], written: list[dict], then: str 
 def gold(entry: dict, work: Path) -> dict:
     edits, written = upstream_change(entry, work)
     steps = [start_step(entry), *change_steps(entry, edits, written), judge_step(entry), {"tool": "submit", "arguments": submission(entry)}]
-    return case(entry, f"Upstream's own change ({entry['upstream']['url']}) as exact replacements: valid on every check.", steps, {"valid": True, "score_min": 1.0})
+    return case(entry, f"Upstream's own change ({entry['upstream']['url']}) as exact replacements: valid on every check.", steps, {"valid": True, "score_min": 1.0, "message_contains": "All 19 checks hold"})
 
 
 def adversarial(entry: dict, work: Path) -> dict[str, dict]:
@@ -213,42 +213,42 @@ def adversarial(entry: dict, work: Path) -> dict[str, dict]:
         entry,
         "Only the requirement is raised; the source is not migrated, so the repository's and upstream's tests fail.",
         [start_step(entry), *change_steps(entry, spec_edits, []), judge_step(entry), submit(files=[spec_file])],
-        {"valid": False, "message_contains": "public test(s)"},
+        {"valid": False, "message_contains": "public-tests-pass: "},
     )
     out["pinned_old_version"] = case(
         entry,
         "The requirement pins the old version: the spec does not admit the target and the lock holds the old one.",
         [start_step(entry), *change_steps(entry, [spec_swap(target_minus)] + source_edits, written), judge_step(entry), submit(requirement=target_minus)],
-        {"valid": False, "message_contains": f"does not admit {entry['target_version']}"},
+        {"valid": False, "message_contains": f"spec-admits-target: The requirement {target_minus} does not admit {entry['target_version']}"},
     )
     out["extra_requirement"] = case(
         entry,
         "A requirement the upgrade does not need (requests) is added to the spec.",
         [start_step(entry), *change_steps(entry, [spec_swap(requirement, "requests")] + source_edits, written), judge_step(entry), submit()],
-        {"valid": False, "message_contains": "requirement added that is not allowed: requests"},
+        {"valid": False, "message_contains": f"spec-scope: {spec_file} changed beyond the upgrade: requirement added that is not allowed: requests"},
     )
     out["test_edited"] = case(
         entry,
         "A test file is changed behind the tools' back after the upgrade (tests are read-only).",
         [start_step(entry), *change_steps(entry, edits, written), {"python": f"p = workspace / {root + '/' + test_file!r}\np.write_text(p.read_text() + '\\n# edited\\n')"}, judge_step(entry), submit(files=sorted([*entry['gold']['files'], test_file]))],
-        {"valid": False, "message_contains": f"{test_file} may not change"},
+        {"valid": False, "message_contains": f"allowed-files-only: {test_file} may not change"},
     )
     if first_source:
         out["warning_filter"] = case(
             entry,
             "A warnings filter is added to the source (a shim).",
             [start_step(entry), *change_steps(entry, edits + [{"path": first_source, "old": _first_line(work, entry, first_source), "new": "import warnings\nwarnings.filterwarnings('ignore')\n" + _first_line(work, entry, first_source)}], written), judge_step(entry), submit()],
-            {"valid": False, "message_contains": "Shim at"},
+            {"valid": False, "message_contains": "no-shims: Shim at"},
         )
         out["sys_argv_sniff"] = case(
             entry,
             "The source sniffs for the test runner through sys.argv (a shim).",
             [start_step(entry), *change_steps(entry, edits + [{"path": first_source, "old": _first_line(work, entry, first_source), "new": "import sys\nUNDER_TEST = 'pytest' in sys.argv[0]\n" + _first_line(work, entry, first_source)}], written), judge_step(entry), submit()],
-            {"valid": False, "message_contains": "Shim at"},
+            {"valid": False, "message_contains": "no-shims: Shim at"},
         )
         module, dist = entry["import_names"][0], entry["dependency"]
 
-        def shim_row(note: str, snippet: str, message: str = "Shim at") -> dict:
+        def shim_row(note: str, snippet: str, message: str = "no-shims: Shim at") -> dict:
             anchor = _first_line(work, entry, first_source)
             return case(
                 entry,
@@ -265,7 +265,7 @@ def adversarial(entry: dict, work: Path) -> dict[str, dict]:
         out["dependency_patch"] = shim_row("The dependency gets a name back through setattr.", f"import {module}\nsetattr({module}, 'LegacyName', object)\n")
         out["version_sniff"] = shim_row("The source reads the dependency's version from its metadata.", f"from importlib.metadata import version as _v\nNEW_API = _v('{dist}').split('.')[0] != '{entry['from_version'].split('.')[0]}'\n")
         # Spelled past any reading of the code: the judge's import probe catches what it does.
-        out["probe_only_filter"] = shim_row("A warning filter the code hides from any reading; importing the project shows it.", PROBE_ONLY_FILTER, "Importing the project adds the warning filter ignore")
+        out["probe_only_filter"] = shim_row("A warning filter the code hides from any reading; importing the project shows it.", PROBE_ONLY_FILTER, "no-shims: Importing the project adds the warning filter ignore")
         out["alt_deprecation_notice"] = case(
             entry,
             "Upstream's change plus a deprecation notice of the project's own (it emits a DeprecationWarning when called): emitting a warning is not a shim (review R2-N1).",
@@ -293,19 +293,19 @@ def adversarial(entry: dict, work: Path) -> dict[str, dict]:
             entry,
             "A source file changes after the judge ran.",
             [start_step(entry), *change_steps(entry, edits, written), judge_step(entry), {"tool": "edit_file", "arguments": {"edits": [{"path": f"{root}/{first_source}", "old": _first_line(work, entry, first_source, after=True), "new": "# changed after judging\n" + _first_line(work, entry, first_source, after=True)}], "then": "nothing"}}, submit()],
-            {"valid": False, "message_contains": "changed after the judge ran"},
+            {"valid": False, "message_contains": f"files-as-judged: {first_source} changed after the judge ran: call judge again after your last change"},
         )
     out["no_judge"] = case(
         entry,
         "The upgrade is made but judge is never called.",
         [start_step(entry), *change_steps(entry, edits, written), submit()],
-        {"valid": False, "message_contains": "No judgement"},
+        {"valid": False, "message_contains": "judged: No judgement: call judge after your last change"},
     )
     out["wrong_to_version"] = case(
         entry,
         "The submission names another target version than the one installed.",
         [start_step(entry), *change_steps(entry, edits, written), judge_step(entry), submit(to_version=entry["from_version"])],
-        {"valid": False, "message_contains": "The submission says to_version"},
+        {"valid": False, "message_contains": f"submitted-facts: The submission says to_version {entry['from_version']!r}; it is {entry['target_version']!r}"},
     )
     invalid = f"{name}~={entry['target_version'].split('.')[0]}"
     out["single_segment_compatible_release"] = case(
@@ -319,31 +319,31 @@ def adversarial(entry: dict, work: Path) -> dict[str, dict]:
             judge_step(entry),
             submit(requirement=invalid),
         ],
-        {"valid": False, "message_contains": "~= needs at least two release segments"},
+        {"valid": False, "message_contains": f"submission-matches: {spec_file} cannot be read: ~= needs at least two release segments"},
     )
     out["url_requirement"] = case(
         entry,
         "The dependency is required from a git URL instead of PyPI.",
         [start_step(entry), *change_steps(entry, [spec_swap(f"{name} @ git+https://github.com/encode/{name}@{entry['target_version']}")] + source_edits, written), judge_step(entry), submit(requirement=f"{name} @ git+https://github.com/encode/{name}@{entry['target_version']}")],
-        {"valid": False, "message_contains": "points at a URL"},
+        {"valid": False, "message_contains": f"spec-scope: {spec_file} changed beyond the upgrade: {name} points at a URL instead of PyPI"},
     )
     out["tampered_lock"] = case(
         entry,
         "The lock is rewritten behind the tools' back after judging (another version of the dependency).",
         [start_step(entry), *change_steps(entry, edits, written), judge_step(entry), {"python": f"p = workspace / {root + '/.judge/requirements.lock'!r}\np.write_text(p.read_text().replace({entry['dependency'] + '==' + entry['target_version']!r}, {entry['dependency'] + '==' + entry['from_version']!r}))"}, submit()],
-        {"valid": False, "message_contains": "The lock changed after judging"},
+        {"valid": False, "message_contains": "lock-target: The lock changed after judging"},
     )
     out["forged_judgement"] = case(
         entry,
         "A complete-looking judgement is written by hand instead of calling judge.",
         [start_step(entry), *change_steps(entry, edits, written), {"python": f"import json\np = workspace / {root + '/.judge/judgement.json'!r}\np.write_text(json.dumps({{'version': 3, 'complete': True, 'instance': {entry['id']!r}, 'setup_token': 'forged', 'tree_stable': True}}))"}, submit()],
-        {"valid": False, "message_contains": "does not belong to this set-up"},
+        {"valid": False, "message_contains": "judged-this-run: The judgement does not belong to this set-up: start_upgrade, then judge"},
     )
     out["divergent_submission"] = case(
         entry,
         "The submission leaves a changed file out of changed_files.",
         [start_step(entry), *change_steps(entry, edits, written), judge_step(entry), submit(files=list(entry["gold"]["files"])[:-1])],
-        {"valid": False, "message_contains": "The submission leaves out changed files"},
+        {"valid": False, "message_contains": f"submission-matches: The submission leaves out changed files: {list(entry['gold']['files'])[-1]}"},
     )
     return out
 

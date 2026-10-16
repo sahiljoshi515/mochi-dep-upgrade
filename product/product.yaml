@@ -4,7 +4,7 @@ summary: "Each instance is a real commit in which an open-source project upgrade
 highlights:
   - "Real upgrades from GitHub, validated by an oracle: the old code must break on the new version, and upstream's change must fix it"
   - "Hidden tests are upstream's own tests after its upgrade"
-  - "The lock must hold exactly the target with PyPI's published hashes; nothing else may move"
+  - "The lock must hold exactly the target with PyPI's published hashes; nothing else may move further than upstream's own upgrade did"
   - "Every verdict lists all 19 checks in plain words"
 steps:
   - "Ask the chat to upgrade an instance, for example respx to httpx 0.28"

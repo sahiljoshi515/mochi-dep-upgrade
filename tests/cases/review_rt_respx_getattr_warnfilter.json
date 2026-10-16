@@ -71,6 +71,6 @@
  "expect": {
   "valid": false,
   "score_max": 0.99,
-  "message_contains": "Shim at respx/mocks.py:"
+  "message_contains": "no-shims: Shim at respx/mocks.py:"
  }
 }

@@ -65,6 +65,6 @@
  "answer": "Upgraded, judged and submitted.",
  "expect": {
   "valid": false,
-  "message_contains": "requirement added that is not allowed: requests"
+  "message_contains": "spec-scope: setup.py changed beyond the upgrade: requirement added that is not allowed: requests"
  }
 }

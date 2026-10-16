@@ -1,5 +1,5 @@
 {
- "note": "From the independent review (F1): raise only Werkzeug, keep Flask and jsonschema where they were, migrate the source as upstream did. Both collateral packages stay at their pre-upgrade versions, which lock_scope allows; every test passes.",
+ "note": "From the independent review (F1): raise only Werkzeug, keep Flask and jsonschema where they were, migrate the source as upstream did. Both collateral packages stay at their pre-upgrade versions, which lock-scope allows; every test passes.",
  "task": "upgrade-dependency",
  "arguments": {
   "instance": "flask-restx-werkzeug-3"

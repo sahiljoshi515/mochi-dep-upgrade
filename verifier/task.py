@@ -118,6 +118,12 @@ def lock_scope_problems(current, base, gold, entry):
     return problems
 
 
+def tail_text(record):
+    """The last two lines of a judge stage's output, as ": <lines>" to end a message, or "" when it recorded none."""
+    tail = " ".join((record.get("tail") or [])[-2:])[:300]
+    return f": {tail}" if tail.strip() else ""
+
+
 def diff_lines(root, changed):
     out = []
     for item in changed:
@@ -145,7 +151,7 @@ def verify_task(arguments, output, reference, workspace):
 
     # 1. The answer key: PyPI still serves the target release exactly as validated.
     if reference is None:
-        c.add("instance_pinned", f"PyPI still serves {dependency} {target} as validated", False, message="No answer key was pinned for this run")
+        c.add("instance-pinned", f"PyPI still serves {dependency} {target} as validated", False, message="No answer key was pinned for this run")
         pypi_hashes = set()
     else:
         served = sorted((item.filename, item.sha256) for item in reference.pypi_files)
@@ -157,7 +163,7 @@ def verify_task(arguments, output, reference, workspace):
         if reference.pypi_yanked:
             problems.append(f"PyPI marks {dependency} {target} yanked")
         c.add(
-            "instance_pinned",
+            "instance-pinned",
             f"PyPI still serves {dependency} {target} as validated",
             not problems,
             expected=[name for name, _ in expected_files],
@@ -171,11 +177,11 @@ def verify_task(arguments, output, reference, workspace):
     want = {"instance": instance, "dependency": dep, "from_version": old, "to_version": target}
     wrong = [key for key in want if facts[key] != want[key]]
     c.add(
-        "submitted_facts",
+        "submitted-facts",
         "The submission names this instance, its dependency and both versions",
         not wrong,
-        expected=want,
-        actual=facts,
+        expected={key: want[key] for key in wrong} if wrong else want,
+        actual={key: facts[key] for key in wrong} if wrong else facts,
         message=(f"The submission says {wrong[0]} {facts[wrong[0]]!r}; it is {want[wrong[0]]!r}" if wrong else ""),
     )
 
@@ -183,7 +189,7 @@ def verify_task(arguments, output, reference, workspace):
     notes = [note.strip() for note in output.migration]
     out_of_range = [note for note in notes if not 10 <= len(note) <= 200]
     c.add(
-        "migration_notes",
+        "migration-notes",
         "The submission explains the migration in 1 to 8 notes of 10 to 200 characters",
         1 <= len(notes) <= 8 and not out_of_range,
         expected="1-8 notes, 10-200 characters each",
@@ -219,20 +225,20 @@ def verify_task(arguments, output, reference, workspace):
     changed = changes(manifest["files"], entries) if pristine_ok else []
     derived = [item["path"] for item in changed]
     # Added lines and shims are counted in the editable files only; a change anywhere else already
-    # fails allowed_files_only.
+    # fails allowed-files-only.
     editable_changed = [item for item in changed if matches_any(item["path"], editable)]
     added = added_lines_by_file(root, editable_changed) if pristine_ok else {}
 
     # 5. This run's judgement.
     ready, _ = read_json(root / ".judge" / READY)
     if not judged:
-        c.skip("judged_this_run", "The judgement was made in this run, after this set-up", "no complete judgement")
+        c.skip("judged-this-run", "The judgement was made in this run, after this set-up", "judged")
     else:
         fresh = reference is not None and hashlib.sha256(raw).hexdigest() != reference.prior_judgement_sha256
         token = (ready or {}).get("setup_token", "")
         same_setup = bool(token) and judgement.get("setup_token") == token
         c.add(
-            "judged_this_run",
+            "judged-this-run",
             "The judgement was made in this run, after this set-up",
             fresh and same_setup,
             message=("The judgement is from an earlier run: call judge in this run" if not fresh else "The judgement does not belong to this set-up: start_upgrade, then judge"),
@@ -240,7 +246,7 @@ def verify_task(arguments, output, reference, workspace):
 
     # 6. The judgement judged this instance as catalogued.
     if not judged:
-        c.skip("judgement_consistent", "The judgement used this instance's catalog entry, pristine tree and hidden tests", "no complete judgement")
+        c.skip("judgement-consistent", "The judgement used this instance's catalog entry, pristine tree and hidden tests", "judged")
     else:
         hidden = judgement.get("hidden") or {}
         mismatched = []
@@ -251,7 +257,7 @@ def verify_task(arguments, output, reference, workspace):
         if hidden.get("ran") and hidden.get("files_digest") != catalog.hidden_digest(entry["hidden"]["files"]):
             mismatched.append("hidden tests")
         c.add(
-            "judgement_consistent",
+            "judgement-consistent",
             "The judgement used this instance's catalog entry, pristine tree and hidden tests",
             not mismatched,
             message="The judgement used another " + ", ".join(mismatched) if mismatched else "",
@@ -259,9 +265,9 @@ def verify_task(arguments, output, reference, workspace):
 
     # 7. Nothing changed after (or while) judging.
     if not judged:
-        c.skip("files_as_judged", "The files are exactly as the judge saw them", "no complete judgement")
+        c.skip("files-as-judged", "The files are exactly as the judge saw them", "judged")
     elif not pristine_ok:
-        c.skip("files_as_judged", "The files are exactly as the judge saw them", no_project)
+        c.skip("files-as-judged", "The files are exactly as the judge saw them", no_project)
     else:
         recorded = {item.get("path"): item.get("sha256") for item in judgement.get("changed_files", []) if isinstance(item, dict)}
         now = {item["path"]: item["sha256"] for item in changed}
@@ -269,12 +275,13 @@ def verify_task(arguments, output, reference, workspace):
         same_tree = tree_hash(entries) == judgement.get("tree_sha256")
         stable = judgement.get("tree_stable") is True
         c.add(
-            "files_as_judged",
+            "files-as-judged",
             "The files are exactly as the judge saw them",
             same_tree and stable and not drift,
             expected=judgement.get("tree_sha256"),
             actual=tree_hash(entries),
-            message=(f"{drift[0]} changed after the judge ran" if drift else ("Files changed after the judge ran" if not same_tree else "Files changed while the judge was running")),
+            message=(f"{drift[0]} changed after the judge ran" if drift else ("Files changed after the judge ran" if not same_tree else "Files changed while the judge was running"))
+            + ": call judge again after your last change",
         )
 
     # 8. The submission matches the work.
@@ -291,7 +298,7 @@ def verify_task(arguments, output, reference, workspace):
         except (ValueError, UnicodeDecodeError, OSError) as error:
             spec_problem = f"{spec['file']} cannot be read: {error}"
     if not pristine_ok:
-        c.skip("submission_matches", "The submission lists exactly the changed files and the spec's requirement", no_project)
+        c.skip("submission-matches", "The submission lists exactly the changed files and the spec's requirement", no_project)
     else:
         submitted = sorted({path.strip() for path in output.changed_files})
         extra = [path for path in submitted if path not in derived]
@@ -312,7 +319,7 @@ def verify_task(arguments, output, reference, workspace):
         else:
             message = f"The submission states the requirement {output.requirement!r}; the spec says {requirement_now!r}"
         c.add(
-            "submission_matches",
+            "submission-matches",
             "The submission lists exactly the changed files and the spec's requirement",
             not spec_problem and not extra and not missing and same_requirement,
             expected={"changed_files": derived, "requirement": requirement_now},
@@ -322,23 +329,23 @@ def verify_task(arguments, output, reference, workspace):
 
     # 9. Only the spec and the package's source changed.
     if not pristine_ok:
-        c.skip("allowed_files_only", "Only the spec's requirements and the package's source changed", no_project)
+        c.skip("allowed-files-only", "Only the spec's requirements and the package's source changed", no_project)
     else:
         outside = [item["path"] for item in changed if not matches_any(item["path"], editable)]
         deleted = [item["path"] for item in changed if item["status"] == "deleted"]
         c.add(
-            "allowed_files_only",
+            "allowed-files-only",
             "Only the spec's requirements and the package's source changed",
             not outside and not deleted,
             expected=editable,
             actual=short(outside + deleted, 10),
-            message=(f"{outside[0]} may not change" if outside else (f"{deleted[0]} was deleted" if deleted else "")),
+            message=(f"{outside[0]} may not change: only {', '.join(editable)} may" if outside else (f"{deleted[0]} was deleted, and no file may be" if deleted else "")),
         )
 
     # 10. Within the instance's limits.
     limits = entry["limits"]
     if not pristine_ok:
-        c.skip("within_limits", "The change stays within the instance's limits", no_project)
+        c.skip("within-limits", "The change stays within the instance's limits", no_project)
     else:
         files_changed = len(changed)
         files_new = sum(1 for item in changed if item["status"] == "added")
@@ -351,7 +358,7 @@ def verify_task(arguments, output, reference, workspace):
         if lines_added > limits["max_added_lines"]:
             over.append(f"{lines_added} added lines (at most {limits['max_added_lines']})")
         c.add(
-            "within_limits",
+            "within-limits",
             "The change stays within the instance's limits",
             not over,
             expected=limits,
@@ -361,9 +368,9 @@ def verify_task(arguments, output, reference, workspace):
 
     # 11. The spec changed only as the upgrade needs.
     if not pristine_ok:
-        c.skip("spec_scope", "The spec changed only the dependency's requirement (and what moves with it)", no_project)
+        c.skip("spec-scope", "The spec changed only the dependency's requirement (and what moves with it)", no_project)
     elif spec_problem:
-        c.add("spec_scope", "The spec changed only the dependency's requirement (and what moves with it)", False, message=spec_problem)
+        c.add("spec-scope", "The spec changed only the dependency's requirement (and what moves with it)", False, message=spec_problem)
     else:
         pristine_text = (root / ".judge" / "pristine" / spec["file"]).read_bytes().decode("utf-8")
         base_requirements, blanked_base = read_spec(spec["kind"], pristine_text)
@@ -372,23 +379,23 @@ def verify_task(arguments, output, reference, workspace):
             problems.append(f"only the requirements in {spec['file']} may change; the rest of the file changed too")
         problems += spec_scope_problems(entry, spec_requirements, base_requirements)
         c.add(
-            "spec_scope",
+            "spec-scope",
             "The spec changed only the dependency's requirement (and what moves with it)",
             not problems,
             expected=base_requirements,
             actual=spec_requirements,
-            message="; ".join(problems[:3]),
+            message=f"{spec['file']} changed beyond the upgrade: " + "; ".join(problems[:3]) + (f"; and {len(problems) - 3} more" if len(problems) > 3 else ""),
         )
 
     # 12. The requirement admits the target (and excludes the old version when upstream's does).
     exclude = bool(spec.get("must_exclude_old"))
     constraint = f"{dependency}'s requirement admits {target}" + (f" and excludes {old}" if exclude else "")
     if not pristine_ok:
-        c.skip("spec_admits_target", constraint, no_project)
+        c.skip("spec-admits-target", constraint, no_project)
     elif spec_problem:
-        c.add("spec_admits_target", constraint, False, message=spec_problem)
+        c.add("spec-admits-target", constraint, False, message=spec_problem)
     elif not requirement_now:
-        c.add("spec_admits_target", constraint, False, message=f"The spec does not state {dependency}'s requirement exactly once")
+        c.add("spec-admits-target", constraint, False, message=f"The spec does not state {dependency}'s requirement exactly once")
     else:
         try:
             specifier = parse_requirement(requirement_now).specifier
@@ -398,7 +405,7 @@ def verify_task(arguments, output, reference, workspace):
             admits_target, admits_old = False, True
         ok = admits_target and not (exclude and admits_old)
         c.add(
-            "spec_admits_target",
+            "spec-admits-target",
             constraint,
             ok,
             expected=f"admits {target}" + (f", excludes {old}" if exclude else ""),
@@ -410,12 +417,12 @@ def verify_task(arguments, output, reference, workspace):
     lock_path = root / ".judge" / LOCK
     lock_packages = None
     if not judged:
-        c.skip("lock_target", f"The lock pins {dependency} {target} with PyPI's hashes", "no complete judgement")
+        c.skip("lock-target", f"The lock pins {dependency} {target} with PyPI's hashes", "judged")
     else:
         lock = judgement.get("lock") or {}
         problem = ""
         if not lock.get("ok"):
-            problem = "The spec did not resolve when judged: " + " ".join((lock.get("tail") or [])[-2:])[:300]
+            problem = "The spec did not resolve when judged" + tail_text(lock)
         elif not lock_path.is_file() or sha256_of(lock_path) != lock.get("sha256"):
             problem = "The lock changed after judging"
         else:
@@ -431,25 +438,26 @@ def verify_task(arguments, output, reference, workspace):
                 problem = f"The lock holds {dependency} {', '.join(versions) or 'nothing'}, not {target}"
             elif not hashes or not hashes <= pypi_hashes:
                 problem = f"The lock's hashes for {dependency} are not the ones PyPI serves for {target}"
-        c.add("lock_target", f"The lock pins {dependency} {target} with PyPI's hashes", not problem, expected=target, actual=(sorted({pin["version"] for pin in (lock_packages or {}).get(dep, [])}) if lock_packages else None), message=problem)
+        c.add("lock-target", f"The lock pins {dependency} {target} with PyPI's hashes", not problem, expected=target, actual=(sorted({pin["version"] for pin in (lock_packages or {}).get(dep, [])}) if lock_packages else None), message=problem)
 
     # 14. Nothing else in the lock moved beyond the validated upgrade.
     scope_label = "Every other locked package keeps its version, or takes upstream's where the upgrade moves it"
     if lock_packages is None:
-        c.skip("lock_scope", scope_label, "no readable judged lock")
+        c.skip("lock-scope", scope_label, "lock-target" if judged else "judged")
     else:
         moved = lock_scope_problems(lock_packages, read_lock(catalog.lock_text(entry, "base")), read_lock(catalog.lock_text(entry, "gold")), entry)
-        c.add("lock_scope", scope_label, not moved, actual=short(moved, 10), message=(moved[0] if moved else ""))
+        message = "The judged lock goes beyond the upgrade: " + "; ".join(moved[:3]) + (f"; and {len(moved) - 3} more" if len(moved) > 3 else "")
+        c.add("lock-scope", scope_label, not moved, actual=short(moved, 10), message=message)
 
     # 15. Installed for judging.
     if not judged:
-        c.skip("installed_target", f"{dependency} {target} was installed for judging and the environment is consistent", "no complete judgement")
+        c.skip("installed-target", f"{dependency} {target} was installed for judging and the environment is consistent", "judged")
     else:
         install = judgement.get("install") or {}
         installed = (install.get("installed") or {}).get(dep, "")
         check = (install.get("pip_check") or {}).get("ok") is True
         c.add(
-            "installed_target",
+            "installed-target",
             f"{dependency} {target} was installed for judging and the environment is consistent",
             bool(install.get("ok")) and installed == target and check,
             expected=target,
@@ -460,7 +468,7 @@ def verify_task(arguments, output, reference, workspace):
     # 16. The wheel builds, and what it declares for the dependency admits the target.
     label = f"The project's wheel builds and its requirement on {dependency} admits {target}"
     if not judged:
-        c.skip("builds", label, "no complete judgement")
+        c.skip("builds", label, "judged")
     else:
         build = judgement.get("build") or {}
         declared = []
@@ -473,7 +481,7 @@ def verify_task(arguments, output, reference, workspace):
                 declared.append(requirement)
         admitted = bool(declared) and all(admits(requirement.specifier, target) for requirement in declared)
         if not build.get("ok"):
-            message = "The wheel did not build: " + " ".join((build.get("tail") or [])[-2:])[:300]
+            message = "The wheel did not build" + tail_text(build)
         elif not declared:
             message = f"The built wheel does not declare {dependency}"
         else:
@@ -481,9 +489,9 @@ def verify_task(arguments, output, reference, workspace):
         c.add("builds", label, bool(build.get("ok")) and admitted, expected=f"admits {target}", actual=[requirement.text for requirement in declared], message=message)
 
     # 17-18. The tests.
-    for cid, kind, label in (("public_tests_pass", "public", "The repository's judged tests pass"), ("hidden_tests_pass", "hidden", "Upstream's post-upgrade tests pass")):
+    for cid, kind, label in (("public-tests-pass", "public", "The repository's judged tests pass"), ("hidden-tests-pass", "hidden", "Upstream's post-upgrade tests pass")):
         if not judged:
-            c.skip(cid, label, "no complete judgement")
+            c.skip(cid, label, "judged")
             continue
         record = judgement.get(kind) or {}
         ids = entry[kind]["ids"]
@@ -496,9 +504,11 @@ def verify_task(arguments, output, reference, workspace):
         elif not right_set:
             message = f"The judge ran another set of {kind} tests"
         elif failed or record.get("failed_count"):
-            message = f"{record.get('failed_count', len(failed))} {kind} test(s) did not pass" + (f", e.g. {failed[0]}" if kind == "public" and failed else "")
+            count = record.get("failed_count", len(failed))
+            message = f"{count} {kind} {'test' if count == 1 else 'tests'} did not pass" + (f", e.g. {failed[0]}" if kind == "public" and failed else "")
         elif missing or record.get("missing_count"):
-            message = f"{record.get('missing_count', len(missing))} {kind} test(s) were not collected"
+            count = record.get("missing_count", len(missing))
+            message = f"{count} {kind} {'test was' if count == 1 else 'tests were'} not collected"
         else:
             message = f"The {kind} test run did not finish cleanly"
         c.add(cid, label, ok, expected=len(ids), actual=record.get("passed"), message=message)
@@ -507,7 +517,7 @@ def verify_task(arguments, output, reference, workspace):
     # ast), none in what importing the project does (the judge's import probe).
     shim_label = "No shim in the added code or in what importing the project does (warning filters, patching, import tricks, sniffing)"
     if not pristine_ok:
-        c.skip("no_shims", shim_label, no_project)
+        c.skip("no-shims", shim_label, no_project)
     else:
         found = scan(root, editable_changed, entry)
         if judged:
@@ -525,7 +535,8 @@ def verify_task(arguments, output, reference, workspace):
                 problems += [f"Importing the project {finding}" for finding in record.get("findings") or [] if finding not in expected]
             elif (judgement.get("lock") or {}).get("ok"):
                 problems.append("The import probe did not run")
-        c.add("no_shims", shim_label, not problems, actual=short(problems, 10), message=(problems[0] if problems else ""))
+        more = f" (and {len(problems) - 1} more {'finding' if len(problems) == 2 else 'findings'})" if len(problems) > 1 else ""
+        c.add("no-shims", shim_label, not problems, actual=short(problems, 10), message=(problems[0] + more if problems else ""))
 
     hidden = (judgement or {}).get("hidden") or {}
     public = (judgement or {}).get("public") or {}

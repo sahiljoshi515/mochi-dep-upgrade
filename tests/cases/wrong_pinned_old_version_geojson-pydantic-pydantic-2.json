@@ -190,6 +190,6 @@
  "answer": "Upgraded, judged and submitted.",
  "expect": {
   "valid": false,
-  "message_contains": "does not admit 2.0.2"
+  "message_contains": "spec-admits-target: The requirement pydantic==1.10.11 does not admit 2.0.2"
  }
 }

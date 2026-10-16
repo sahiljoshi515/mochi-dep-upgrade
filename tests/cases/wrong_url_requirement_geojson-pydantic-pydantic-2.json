@@ -190,6 +190,6 @@
  "answer": "Upgraded, judged and submitted.",
  "expect": {
   "valid": false,
-  "message_contains": "points at a URL"
+  "message_contains": "spec-scope: pyproject.toml changed beyond the upgrade: pydantic points at a URL instead of PyPI"
  }
 }

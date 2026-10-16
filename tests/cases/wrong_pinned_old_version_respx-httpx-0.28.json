@@ -65,6 +65,6 @@
  "answer": "Upgraded, judged and submitted.",
  "expect": {
   "valid": false,
-  "message_contains": "does not admit 0.28.1"
+  "message_contains": "spec-admits-target: The requirement httpx==0.27.2 does not admit 0.28.1"
  }
 }

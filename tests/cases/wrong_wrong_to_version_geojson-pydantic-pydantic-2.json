@@ -190,6 +190,6 @@
  "answer": "Upgraded, judged and submitted.",
  "expect": {
   "valid": false,
-  "message_contains": "The submission says to_version"
+  "message_contains": "submitted-facts: The submission says to_version '1.10.11'; it is '2.0.2'"
  }
 }

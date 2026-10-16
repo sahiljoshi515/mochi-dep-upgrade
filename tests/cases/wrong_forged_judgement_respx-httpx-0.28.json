@@ -61,6 +61,6 @@
  "answer": "Upgraded, judged and submitted.",
  "expect": {
   "valid": false,
-  "message_contains": "does not belong to this set-up"
+  "message_contains": "judged-this-run: The judgement does not belong to this set-up: start_upgrade, then judge"
  }
 }

@@ -78,6 +78,6 @@
  "answer": "Upgraded, judged and submitted.",
  "expect": {
   "valid": false,
-  "message_contains": "~= needs at least two release segments"
+  "message_contains": "submission-matches: setup.py cannot be read: ~= needs at least two release segments"
  }
 }

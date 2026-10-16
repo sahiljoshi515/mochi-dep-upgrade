@@ -1,32 +1,57 @@
 // How this plugin's page draws the upgrade-dependency task's output, an UpgradeReportOutput: the
-// upgrade as submitted, every check the verifier made (verdict.details.constraints) with its
-// outcome in words, the agent's migration notes, the changed files with their diffs, and where the
-// answer key came from. Everything shown comes from the output and the verdict.
-import { disclosure, h, icon, statusPill } from "./kit/components.js";
+// upgrade as submitted, every check the verifier made (verdict.details.constraints), the agent's
+// migration notes, the changed files with their diffs, and where the answer key came from.
+// Everything shown comes from the output and the verdict.
+import { disclosure, h, icon } from "./kit/components.js";
 
 const MAX_DIFF_LINES = 400;
 
-/** A check's state as a word and a tone: held, failed, or not checked. */
-function checkState(ok) {
-  if (ok === true) return ["Held", "ok"];
-  if (ok === false) return ["Failed", "bad"];
-  return ["Not checked", "neutral"];
+/** A check's expected or actual value as short text: lists joined, mappings as "key value" pairs. */
+function valueText(value) {
+  if (value === null || value === undefined) return "—";
+  if (Array.isArray(value)) return value.length ? value.map(valueText).join(", ") : "none";
+  if (typeof value === "object") {
+    const pairs = Object.entries(value);
+    return pairs.length ? pairs.map(([key, item]) => `${key} ${valueText(item)}`).join("; ") : "none";
+  }
+  return String(value);
 }
 
-function checkList(constraints) {
-  return h(
-    "ol",
-    { class: "checks", "aria-label": "Checks" },
-    constraints.map((item) => {
-      const [word, tone] = checkState(item.ok);
-      return h(
-        "li",
-        { class: `check check-${tone}` },
-        statusPill(word, tone, { icon: true }),
-        h("span", { class: "check-label", text: item.constraint }),
-        item.ok !== true && item.message ? h("span", { class: "check-message muted small-text", text: item.message }) : null,
-      );
-    }),
+const clipped = (text, most = 240) => (text.length > most ? `${text.slice(0, most - 1)}…` : text);
+const MARK = { ok: ["check", "holds"], bad: ["error", "fails"], skip: ["minus", "not checked"] };
+
+/** The verdict's checks, in order: ✓ holds; ✗ fails, with why and what was expected against what was
+ *  found; – not checked, with the earlier check it needed. */
+function checksList(verdict) {
+  const constraints = Array.isArray(verdict?.details?.constraints) ? verdict.details.constraints : [];
+  if (!constraints.length) return null;
+  const failed = constraints.filter((entry) => entry.ok === false).length;
+  const skipped = constraints.filter((entry) => entry.ok !== true && entry.ok !== false).length;
+  const items = constraints.map((entry) => {
+    const state = entry.ok === true ? "ok" : entry.ok === false ? "bad" : "skip";
+    const [mark, word] = MARK[state];
+    const values = entry.ok === false && entry.expected != null && entry.actual != null;
+    return h(
+      "li",
+      { class: `check check-${state}` },
+      h("div", { class: "check-head" }, icon(mark, { size: 14, label: word }), h("span", { text: entry.constraint }), h("code", { class: "check-id", text: entry.id })),
+      entry.ok !== true && entry.message ? h("p", { class: "check-message small-text", text: entry.message }) : null,
+      values
+        ? h(
+            "p",
+            { class: "check-values small-text" },
+            h("span", { class: "muted", text: "Expected: " }),
+            clipped(valueText(entry.expected)),
+            h("span", { class: "muted", text: " · Actual: " }),
+            clipped(valueText(entry.actual)),
+          )
+        : null,
+    );
+  });
+  const hint = [failed ? `${failed} failed` : "", skipped ? `${skipped} not checked` : ""].filter(Boolean).join(", ") || "all hold";
+  return disclosure(
+    { summary: `Checks: ${constraints.length - failed - skipped} of ${constraints.length} hold`, open: failed > 0, hint },
+    h("ol", { class: "checks" }, items),
   );
 }
 
@@ -99,10 +124,8 @@ function provenance(details) {
   return items.length ? disclosure({ summary: "Where the answer key comes from" }, h("ul", { class: "about-list" }, items)) : null;
 }
 
-function upgradeCard(output, { verdict }) {
+function upgradeCard(output, { verdict } = {}) {
   const details = verdict?.details ?? {};
-  const constraints = Array.isArray(details.constraints) ? details.constraints : [];
-  const held = constraints.filter((item) => item.ok === true).length;
   const failedPublic = details.failed_tests?.public ?? [];
   return h(
     "section",
@@ -113,9 +136,7 @@ function upgradeCard(output, { verdict }) {
       h("p", { class: "upgrade-title" }, icon("file", { size: 18 }), h("span", { text: `${output.dependency} ${output.from_version} → ${output.to_version}` })),
       h("p", { class: "muted small-text", text: `${details.repository ?? output.instance} · requirement ${output.requirement}` }),
     ),
-    constraints.length
-      ? h("div", { class: "upgrade-section" }, h("h4", { text: `Checks: ${held} of ${constraints.length} held` }), checkList(constraints))
-      : null,
+    checksList(verdict),
     output.migration.length ? h("div", { class: "upgrade-section" }, h("h4", { text: "What the agent changed" }), h("ul", { class: "notes" }, output.migration.map((note) => h("li", { text: note })))) : null,
     h("div", { class: "upgrade-section" }, h("h4", { text: `Changed files (${output.changed_files.length})` }), changedFiles(output.changed_files, details.diff)),
     failedPublic.length ? disclosure({ summary: `Failing tests (${failedPublic.length})` }, h("ul", { class: "notes mono" }, failedPublic.map((test) => h("li", { text: test })))) : null,

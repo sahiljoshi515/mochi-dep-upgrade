@@ -203,6 +203,6 @@
  "answer": "Upgraded, judged and submitted.",
  "expect": {
   "valid": false,
-  "message_contains": "changed after the judge ran"
+  "message_contains": "files-as-judged: geojson_pydantic/features.py changed after the judge ran: call judge again after your last change"
  }
 }

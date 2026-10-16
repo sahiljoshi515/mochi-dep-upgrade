@@ -58,6 +58,6 @@
  "answer": "Upgraded, judged and submitted.",
  "expect": {
   "valid": false,
-  "message_contains": "No judgement"
+  "message_contains": "judged: No judgement: call judge after your last change"
  }
 }

@@ -195,6 +195,6 @@
  "answer": "Upgraded, judged and submitted.",
  "expect": {
   "valid": false,
-  "message_contains": "Shim at"
+  "message_contains": "no-shims: Shim at"
  }
 }

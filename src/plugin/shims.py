@@ -4,7 +4,7 @@ module's imports and simple aliases, constant strings fold, ``getattr``, ``vars`
 ``import_module``, ``__import__`` and ``sys.modules[...]`` are followed when their names fold, and every
 node on an added line is checked with :func:`verifier.shims.path_rule` and
 :func:`verifier.shims.string_rule`. The judge records every finding in the judgement; the verifier
-leaves out the rules the instance exempts and fails no_shims on the rest.
+leaves out the rules the instance exempts and fails no-shims on the rest.
 """
 
 from __future__ import annotations

@@ -64,6 +64,6 @@
  "answer": "Upgraded, judged and submitted.",
  "expect": {
   "valid": false,
-  "message_contains": "The submission leaves out changed files"
+  "message_contains": "submission-matches: The submission leaves out changed files: setup.py"
  }
 }

@@ -1,5 +1,5 @@
 {
- "note": "Review F1's other side: jsonschema may move, but asking for its format-nongpl extra brings in packages neither lock has: lock_scope names the first one.",
+ "note": "Review F1's other side: jsonschema may move, but asking for its format-nongpl extra brings in packages neither lock has: lock-scope names the first one.",
  "task": "upgrade-dependency",
  "arguments": {
   "instance": "flask-restx-werkzeug-3"
@@ -138,6 +138,6 @@
  "expect": {
   "valid": false,
   "score_max": 0.99,
-  "message_contains": "came into the lock; the upgrade brings in no"
+  "message_contains": "lock-scope: The judged lock goes beyond the upgrade: arrow 1.3.0 came into the lock; the upgrade brings in no arrow"
  }
 }
